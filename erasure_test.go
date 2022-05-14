@@ -44,6 +44,7 @@ func TestErasureClient(t *testing.T) {
 			t.Fatal("put data failed ", err)
 		}
 	}
+
 	// test get data
 	for _, d := range tdata {
 		v, err := client.Get(d.k)

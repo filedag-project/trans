@@ -31,6 +31,7 @@ type Client interface {
 	Put(string, []byte) error
 	AllKeysChan(string) (chan string, error)
 	Close()
+	TargetActive() bool
 }
 
 type payload struct {
@@ -446,7 +447,7 @@ func (tc *TransClient) pingTarget() {
 			Timeout: time.Second * 10,
 		}
 		var err error
-		ticker := time.NewTicker(time.Second * 2)
+		ticker := time.NewTicker(time.Second * 1)
 		defer func() {
 			if conn != nil {
 				conn.Close()
@@ -516,4 +517,8 @@ func (tc *TransClient) ping(conn net.Conn) (err error) {
 	}
 	logger.Infof("ping end")
 	return nil
+}
+
+func (tc *TransClient) TargetActive() bool {
+	return tc.targetState == targetActive
 }

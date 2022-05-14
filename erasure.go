@@ -35,8 +35,9 @@ func NewErasureClient(chunkClients []Client, dataShards, parShards int) (*Erasur
 }
 
 func (ec *ErasureClient) Size(key string) (n int, err error) {
-	idx := rand.Intn(len(ec.chunkClients))
-	s, err := ec.chunkClients[idx].Size(key)
+	activeClients := ec.activeClients()
+	idx := rand.Intn(len(activeClients))
+	s, err := activeClients[idx].Size(key)
 	if err != nil {
 		return
 	}
@@ -44,9 +45,10 @@ func (ec *ErasureClient) Size(key string) (n int, err error) {
 }
 
 func (ec *ErasureClient) Has(key string) (has bool, err error) {
-	idx := rand.Intn(len(ec.chunkClients))
+	activeClients := ec.activeClients()
+	idx := rand.Intn(len(activeClients))
 
-	return ec.chunkClients[idx].Has(key)
+	return activeClients[idx].Has(key)
 }
 
 func (ec *ErasureClient) Delete(key string) (err error) {
@@ -114,14 +116,34 @@ func (ec *ErasureClient) Put(key string, value []byte) (err error) {
 }
 
 func (ec *ErasureClient) AllKeysChan(startKey string) (chan string, error) {
-	idx := rand.Intn(len(ec.chunkClients))
-	return ec.chunkClients[idx].AllKeysChan(startKey)
+	activeClients := ec.activeClients()
+	idx := rand.Intn(len(activeClients))
+	return activeClients[idx].AllKeysChan(startKey)
 }
 
 func (ec *ErasureClient) Close() {
 	for _, client := range ec.chunkClients {
 		client.Close()
 	}
+}
+
+func (ec *ErasureClient) activeClients() []Client {
+	res := make([]Client, 0)
+	for _, client := range ec.chunkClients {
+		if client.TargetActive() {
+			res = append(res, client)
+		}
+	}
+	return res
+}
+
+func (ec *ErasureClient) TargetActive() bool {
+	for _, client := range ec.chunkClients {
+		if !client.TargetActive() {
+			return false
+		}
+	}
+	return true
 }
 
 func ErasueEncode(data []byte, dataShards int, parShards int) (shards [][]byte, err error) {
