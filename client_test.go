@@ -20,6 +20,8 @@ var tdata = []pair{
 	{"trans_client_key_02", []byte("trans_client_test_data_02")},
 	{"trans_client_key_03", []byte("trans_client_test_data_03")},
 	{"trans_client_key_04", []byte("trans_client_test_data_04")},
+	{"trans_client_key_06_1_byte", []byte{0}},
+	{"trans_client_key_07_3_bytes", []byte{1, 2, 3}},
 }
 
 func TestTransClient(t *testing.T) {

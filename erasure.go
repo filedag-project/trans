@@ -2,6 +2,7 @@ package trans
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math/rand"
 	"time"
@@ -83,11 +84,14 @@ func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 		}
 	}
 	value, err = erasue_decode(shards, ec.dataShards, ec.parShards)
+	if err == nil {
+		value = unwrapValue(value)
+	}
 	return
 }
 
 func (ec *ErasureClient) Put(key string, value []byte) (err error) {
-	shards, err := ErasueEncode(value, ec.dataShards, ec.parShards)
+	shards, err := ErasueEncode(wrapValue(value), ec.dataShards, ec.parShards)
 	if err != nil {
 		return err
 	}
@@ -221,4 +225,17 @@ func erasue_decode(shards [][]byte, dataShards int, parShards int) (data []byte,
 		return bs.Bytes(), nil
 	}
 	return ErasueDecode(shards, dataShards, parShards)
+}
+
+func wrapValue(v []byte) []byte {
+	l := len(v)
+	wv := make([]byte, l+4)
+	copy(wv[4:], v)
+	binary.LittleEndian.PutUint32(wv[:4], uint32(l))
+	return wv
+}
+
+func unwrapValue(v []byte) []byte {
+	l := binary.LittleEndian.Uint32(v[:4])
+	return v[4 : 4+l]
 }
