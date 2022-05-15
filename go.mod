@@ -5,9 +5,8 @@ go 1.17
 require (
 	github.com/filedag-project/mutcask v0.0.2-0.20220430075957-eb2a63dba0f7
 	github.com/ipfs/go-block-format v0.0.3
-	github.com/ipfs/go-cid v0.2.0
+	github.com/ipfs/go-cid v0.1.0
 	github.com/ipfs/go-ipfs-blockstore v1.0.2
-	github.com/ipfs/go-ipld-format v0.3.0
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/klauspost/reedsolomon v1.9.16
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f

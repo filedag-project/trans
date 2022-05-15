@@ -10,7 +10,6 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	ipld "github.com/ipfs/go-ipld-format"
 	"golang.org/x/xerrors"
 )
 
@@ -43,7 +42,7 @@ func (bs *blostore) Get(cid cid.Cid) (blocks.Block, error) {
 	data, err := bs.kv.Get(cid.String())
 	if err != nil {
 		if err == kv.ErrNotFound {
-			return nil, ipld.ErrNotFound{Cid: cid}
+			return nil, blockstore.ErrNotFound
 		}
 		return nil, err
 	}
@@ -58,7 +57,7 @@ func (bs *blostore) Get(cid cid.Cid) (blocks.Block, error) {
 func (bs *blostore) GetSize(cid cid.Cid) (int, error) {
 	n, err := bs.kv.Size(cid.String())
 	if err != nil && err == kv.ErrNotFound {
-		return -1, ipld.ErrNotFound{Cid: cid}
+		return -1, blockstore.ErrNotFound
 	}
 	return n, err
 }
