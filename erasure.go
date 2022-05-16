@@ -87,6 +87,10 @@ func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 	if err == nil {
 		value = unwrapValue(value)
 	}
+
+	if err == reedsolomon.ErrShardNoData {
+		return nil, ErrNotFound
+	}
 	return
 }
 
