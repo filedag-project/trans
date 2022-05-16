@@ -74,6 +74,7 @@ func (bs *blostore) PutMany(blos []blocks.Block) error {
 		go func(bs *blostore, blo blocks.Block) {
 			defer func() {
 				<-batchChan
+				wg.Done()
 			}()
 			batchChan <- struct{}{}
 			err := bs.kv.Put(blo.Cid().String(), blo.RawData())
