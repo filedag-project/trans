@@ -169,6 +169,9 @@ func (s *PServ) get(conn net.Conn, h *Head) error {
 	reply := &Reply{}
 	if err != nil {
 		reply.Code = rep_failed
+		if err == kv.ErrNotFound {
+			reply.Code = rep_nofound
+		}
 		reply.Body = []byte(err.Error())
 	} else {
 		msg.Value = v
@@ -226,6 +229,9 @@ func (s *PServ) size(conn net.Conn, h *Head) error {
 	reply := &Reply{}
 	if err != nil {
 		reply.Code = rep_failed
+		if err == kv.ErrNotFound {
+			reply.Code = rep_nofound
+		}
 		reply.Body = []byte(err.Error())
 	} else {
 		reply.Code = rep_success

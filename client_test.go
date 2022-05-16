@@ -90,4 +90,19 @@ func TestTransClient(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+
+	// test error not found
+	for _, d := range tdata {
+		_, err := client.Size(d.k)
+		if err != ErrNotFound {
+			t.Fatal(err)
+		}
+	}
+
+	for _, d := range tdata {
+		_, err := client.Get(d.k)
+		if err != ErrNotFound {
+			t.Fatal(err)
+		}
+	}
 }

@@ -127,6 +127,7 @@ type repcode byte
 const (
 	rep_success repcode = iota
 	rep_failed
+	rep_nofound
 )
 
 type Reply struct {

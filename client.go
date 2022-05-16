@@ -214,6 +214,9 @@ func (tc *TransClient) Size(key string) (int, error) {
 	if reply.Code == rep_failed {
 		return -1, fmt.Errorf("%s", reply.Body)
 	}
+	if reply.Code == rep_nofound {
+		return -1, ErrNotFound
+	}
 	size, err := strconv.ParseInt(string(reply.Body), 10, 32)
 	if err != nil {
 		return -1, fmt.Errorf("failed to parse body into size: %s, %s", reply.Body, err)
@@ -257,8 +260,12 @@ func (tc *TransClient) Get(key string) ([]byte, error) {
 		out: ch,
 	}
 	reply := <-ch
+
 	if reply.Code == rep_failed {
 		return nil, fmt.Errorf("%s", reply.Body)
+	}
+	if reply.Code == rep_nofound {
+		return nil, ErrNotFound
 	}
 	if err := msg.FromBytes(reply.Body); err != nil {
 		return nil, err

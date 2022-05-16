@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 
-	kv "github.com/filedag-project/mutcask"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -29,7 +28,7 @@ func (bs *blostore) DeleteBlock(cid cid.Cid) error {
 func (bs *blostore) Has(cid cid.Cid) (bool, error) {
 	_, err := bs.kv.Size(cid.String())
 	if err != nil {
-		if err == kv.ErrNotFound {
+		if err == ErrNotFound {
 			return false, nil
 		}
 		return false, err
@@ -41,7 +40,7 @@ func (bs *blostore) Has(cid cid.Cid) (bool, error) {
 func (bs *blostore) Get(cid cid.Cid) (blocks.Block, error) {
 	data, err := bs.kv.Get(cid.String())
 	if err != nil {
-		if err == kv.ErrNotFound {
+		if err == ErrNotFound {
 			return nil, blockstore.ErrNotFound
 		}
 		return nil, err
@@ -56,7 +55,7 @@ func (bs *blostore) Get(cid cid.Cid) (blocks.Block, error) {
 
 func (bs *blostore) GetSize(cid cid.Cid) (int, error) {
 	n, err := bs.kv.Size(cid.String())
-	if err != nil && err == kv.ErrNotFound {
+	if err != nil && err == ErrNotFound {
 		return -1, blockstore.ErrNotFound
 	}
 	return n, err
