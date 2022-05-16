@@ -454,7 +454,7 @@ func (tc *TransClient) pingTarget() {
 			Timeout: time.Second * 10,
 		}
 		var err error
-		ticker := time.NewTicker(time.Second * 1)
+		ticker := time.NewTicker(time.Second * 3)
 		defer func() {
 			if conn != nil {
 				conn.Close()

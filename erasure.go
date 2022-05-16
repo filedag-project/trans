@@ -74,22 +74,23 @@ func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 			ch <- res
 		}(i, client, ch)
 	}
+	nilDataCount := 0
 	shards := make([][]byte, shardsNum)
 	for i := 0; i < shardsNum; i++ {
 		res := <-ch
 		if res.e != nil {
 			logger.Warnf("fetch index: %d shard failed: %s", res.i, res.e)
+			nilDataCount++
 		} else {
 			shards[res.i] = res.v
 		}
 	}
+	if nilDataCount > ec.parShards { // if there is not enougth shards to reconstruct data, just respond as not found
+		return nil, ErrNotFound
+	}
 	value, err = erasue_decode(shards, ec.dataShards, ec.parShards)
 	if err == nil {
 		value = unwrapValue(value)
-	}
-
-	if err == reedsolomon.ErrShardNoData {
-		return nil, ErrNotFound
 	}
 	return
 }
