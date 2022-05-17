@@ -36,20 +36,49 @@ func NewErasureClient(chunkClients []Client, dataShards, parShards int) (*Erasur
 }
 
 func (ec *ErasureClient) Size(key string) (n int, err error) {
-	activeClients := ec.activeClients()
-	idx := rand.Intn(len(activeClients))
-	s, err := activeClients[idx].Size(key)
-	if err != nil {
-		return
+	shardsNum := len(ec.chunkClients)
+	ch := make(chan ecres)
+	for i, client := range ec.chunkClients {
+		go func(idx int, client Client, ch chan ecres) {
+			res := ecres{
+				i: idx,
+			}
+			s, err := client.Size(key)
+			if err != nil {
+				res.e = err
+			} else {
+				res.s = s
+			}
+			ch <- res
+		}(i, client, ch)
 	}
-	return s * len(ec.chunkClients), nil
+	failedCount := 0
+	shardSize := 0
+	for i := 0; i < shardsNum; i++ {
+		res := <-ch
+		if res.e != nil {
+			logger.Warnf("fetch index: %d shard failed: %s", res.i, res.e)
+			failedCount++
+		} else {
+			shardSize = res.s
+		}
+	}
+	if failedCount > ec.parShards { // if there is not enougth shards to reconstruct data, just respond as not found
+		return -1, ErrNotFound
+	}
+
+	return shardSize * len(ec.chunkClients), nil
 }
 
 func (ec *ErasureClient) Has(key string) (has bool, err error) {
-	activeClients := ec.activeClients()
-	idx := rand.Intn(len(activeClients))
-
-	return activeClients[idx].Has(key)
+	_, err = ec.Size(key)
+	if err != nil {
+		if err == ErrNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (ec *ErasureClient) Delete(key string) (err error) {
@@ -212,6 +241,7 @@ type ecres struct {
 	e error
 	i int
 	v []byte
+	s int
 }
 
 func erasue_decode(shards [][]byte, dataShards int, parShards int) (data []byte, err error) {
