@@ -114,12 +114,18 @@ func (ec *ErasureClient) Put(key string, value []byte) (err error) {
 			ch <- res
 		}(i, client, ch, shards[i])
 	}
+	var errCount int
 	for i := 0; i < shardsNum; i++ {
 		res := <-ch
 		if res.e != nil {
 			logger.Errorf("put index: %d shard failed: %s", res.i, res.e)
 			err = res.e
+			errCount++
 		}
+	}
+	// make sure put action work even if some chunk server is down according to parity shards number
+	if errCount <= ec.parShards {
+		return nil
 	}
 	return
 }
