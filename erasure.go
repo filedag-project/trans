@@ -280,3 +280,25 @@ func unwrapValue(v []byte) []byte {
 	l := binary.LittleEndian.Uint32(v[:4])
 	return v[4 : 4+l]
 }
+
+func ErasueRecover(shards [][]byte, dataShards int, parShards int) (data [][]byte, err error) {
+	enc, err := reedsolomon.New(dataShards, parShards)
+	if err != nil {
+		return
+	}
+
+	t := time.Now()
+	err = enc.Reconstruct(shards)
+	logger.Warnf("erasure reconstruction dur: %d", time.Since(t).Microseconds())
+	if err != nil {
+		logger.Error("erasure reconstruction failed")
+		return
+	}
+	t = time.Now()
+	if ok, _ := enc.Verify(shards); !ok {
+		return nil, fmt.Errorf("erasure verify failed, going to reconstruct")
+	}
+	logger.Warnf("erasure verify dur: %d", time.Since(t).Microseconds())
+
+	return shards, nil
+}

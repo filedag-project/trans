@@ -1,0 +1,107 @@
+package trans
+
+import (
+	"fmt"
+	"math/rand"
+)
+
+type RecoverClient struct {
+	chunkClients   []*ClientWithInfo
+	activeClients  []*ClientWithInfo
+	recoverClients []*ClientWithInfo
+	dataShards     int
+	parShards      int
+}
+
+type ClientWithInfo struct {
+	Client  Client
+	Index   int
+	Recover bool
+}
+
+func NewRecoverClient(chunkClients []*ClientWithInfo, dataShards, parShards int) (*RecoverClient, error) {
+	if dataShards < 3 {
+		return nil, fmt.Errorf("data shards should not be less than 3")
+	}
+	if parShards < 1 {
+		return nil, fmt.Errorf("parity shards should not be less than 1")
+	}
+	if len(chunkClients) != dataShards+parShards {
+		return nil, fmt.Errorf("number of chunk servers should be equal with sum of data shards and parity shards")
+	}
+	rc := &RecoverClient{
+		chunkClients:   chunkClients,
+		activeClients:  make([]*ClientWithInfo, 0),
+		recoverClients: make([]*ClientWithInfo, 0),
+		dataShards:     dataShards,
+		parShards:      parShards,
+	}
+	for _, item := range chunkClients {
+		if item.Recover {
+			rc.recoverClients = append(rc.recoverClients, item)
+		} else {
+			rc.activeClients = append(rc.activeClients, item)
+		}
+	}
+	if len(rc.activeClients) < dataShards {
+		return nil, fmt.Errorf("exppect at least %d active clients, but only got %d ", dataShards, len(rc.activeClients))
+	}
+
+	return rc, nil
+}
+
+func (ec *RecoverClient) Recover(startKey string) (err error) {
+	idx := rand.Intn(len(ec.activeClients))
+	keyChan, err := ec.activeClients[idx].Client.AllKeysChan(startKey)
+	if err != nil {
+		return fmt.Errorf("RecoverClient failed to call AllKeysChan, idx: %d, err: %s", idx, err)
+	}
+	for key := range keyChan {
+		shardsNum := ec.dataShards + ec.parShards
+		ch := make(chan ecres)
+		for _, client := range ec.activeClients {
+			go func(idx int, client Client, ch chan ecres) {
+				res := ecres{
+					i: idx,
+				}
+				v, err := client.Get(key)
+				if err != nil {
+					res.e = err
+				} else {
+					res.v = v
+				}
+				ch <- res
+			}(client.Index, client.Client, ch)
+		}
+
+		shards := make([][]byte, shardsNum)
+		actNum := len(ec.activeClients)
+		for i := 0; i < actNum; i++ {
+			res := <-ch
+			if res.e != nil {
+				logger.Warnf("fetch index: %d shard failed: %s", res.i, res.e)
+			} else {
+				shards[res.i] = res.v
+			}
+		}
+
+		recShards, err := ErasueRecover(shards, ec.dataShards, ec.parShards)
+		if err != nil {
+			return err
+		}
+		for _, recoverClient := range ec.recoverClients {
+			if has, _ := recoverClient.Client.Has(key); !has {
+				if err := recoverClient.Client.Put(key, recShards[recoverClient.Index]); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return
+}
+
+func (ec *RecoverClient) Close() {
+	for _, client := range ec.chunkClients {
+		client.Client.Close()
+	}
+}
