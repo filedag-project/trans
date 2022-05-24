@@ -85,6 +85,68 @@ func TestErasureClient(t *testing.T) {
 	}
 }
 
+func TestErasureClientRecoverMode(t *testing.T) {
+	ctx := context.Background()
+	addrList := []string{":3212", ":3213", ":3214", ":3215", ":3216"}
+	chunkServers := make([]*PServ, len(addrList))
+	for i, addr := range addrList {
+		db := kv.NewMemkv()
+		serv, err := NewPServ(ctx, addr, db)
+		if err != nil {
+			t.Fatal("failed to instance PServ ", err)
+		}
+		chunkServers[i] = serv
+		defer serv.Close()
+	}
+	// wait for server setup listener
+	time.Sleep(time.Millisecond * 200)
+
+	chunkClients := make([]Client, len(addrList))
+	for i, addr := range addrList {
+		cli := NewTransClient(ctx, "127.0.0.1"+addr, 1)
+		defer cli.Close()
+		chunkClients[i] = cli
+	}
+
+	client, err := NewErasureClient(chunkClients, 3, 2, RecoverMode)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// test put data
+	for _, d := range tdata {
+		if err := client.Put(d.k, d.v); err != nil {
+			t.Fatal("put data failed ", err)
+		}
+	}
+
+	recoverIdx := 2
+	for _, d := range tdata {
+		err := chunkClients[recoverIdx].Delete(d.k)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// get data with recover mode
+	for _, d := range tdata {
+		v, err := client.Get(d.k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(v[:len(d.v)], d.v) {
+			t.Fatal("value not match")
+		}
+	}
+	// data should been restored
+	for _, d := range tdata {
+		_, err := chunkClients[recoverIdx].Get(d.k)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestDecode(t *testing.T) {
 	logging.SetLogLevel("*", "info")
 	data := []byte("Reed-Solomon Erasure Coding in Go, with speeds exceeding 1GB/s/cpu core implemented in pure Go.")
