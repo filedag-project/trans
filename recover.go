@@ -57,8 +57,19 @@ func (ec *RecoverClient) Recover(startKey string) (err error) {
 		return fmt.Errorf("RecoverClient failed to call AllKeysChan, idx: %d, err: %s", idx, err)
 	}
 	for key := range keyChan {
-		shardsNum := ec.dataShards + ec.parShards
+		// first to make sure that the key doesn't exist in at least one of the recover clients
+		var needRecover bool
+		for _, recoverClient := range ec.recoverClients {
+			if has, _ := recoverClient.Client.Has(key); !has {
+				needRecover = true
+				break
+			}
+		}
+		if !needRecover { // recover clients already has the key, just go to net key to recover
+			continue
+		}
 		ch := make(chan ecres)
+		shardsNum := ec.dataShards + ec.parShards
 		for _, client := range ec.activeClients {
 			go func(idx int, client Client, ch chan ecres) {
 				res := ecres{
@@ -89,12 +100,23 @@ func (ec *RecoverClient) Recover(startKey string) (err error) {
 		if err != nil {
 			return err
 		}
+		ch2 := make(chan string)
 		for _, recoverClient := range ec.recoverClients {
-			if has, _ := recoverClient.Client.Has(key); !has {
-				if err := recoverClient.Client.Put(key, recShards[recoverClient.Index]); err != nil {
-					return err
+			go func(recoverClient *ClientWithInfo, ch2 chan string) {
+				if has, _ := recoverClient.Client.Has(key); !has {
+					if err := recoverClient.Client.Put(key, recShards[recoverClient.Index]); err != nil {
+						logger.Error(err)
+						ch2 <- "failed"
+					} else {
+						ch2 <- "done"
+					}
+				} else {
+					ch2 <- "skip"
 				}
-			}
+			}(recoverClient, ch2)
+		}
+		for range ec.recoverClients {
+			logger.Info(<-ch2)
 		}
 	}
 	return

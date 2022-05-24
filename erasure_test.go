@@ -33,7 +33,7 @@ func TestErasureClient(t *testing.T) {
 		chunkClients[i] = cli
 	}
 
-	client, err := NewErasureClient(chunkClients, 3, 2)
+	client, err := NewErasureClient(chunkClients, 3, 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestDecode(t *testing.T) {
 		t.Fatal("shards number not match")
 	}
 
-	d, err := ErasueDecode(shards, dataShards, parShards)
+	d, _, err := ErasueDecode(shards, dataShards, parShards)
 	if err != nil {
 		t.Fatal(err)
 	}

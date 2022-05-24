@@ -125,7 +125,7 @@ func NewEraBS(esclient Client, batch int) (*blostore, error) {
 	}, nil
 }
 
-func NewErasureBlockstore(ctx context.Context, servAddrs []string, connNum int, dataShards, parShards int, batch int) (*blostore, error) {
+func NewErasureBlockstore(ctx context.Context, servAddrs []string, connNum int, dataShards, parShards int, batch int, mode string) (*blostore, error) {
 	if batch == 0 {
 		batch = default_batch_num
 	}
@@ -133,7 +133,7 @@ func NewErasureBlockstore(ctx context.Context, servAddrs []string, connNum int, 
 	for i, addr := range servAddrs {
 		chunkClients[i] = NewTransClient(ctx, addr, connNum)
 	}
-	era, err := NewErasureClient(chunkClients, dataShards, parShards)
+	era, err := NewErasureClient(chunkClients, dataShards, parShards, mode)
 	if err != nil {
 		return nil, err
 	}
