@@ -73,7 +73,7 @@ func (ec *RecoverClient) Close() {
 }
 
 func (ec *RecoverClient) ExportAllKeys(startKey, pathToAllKeys string) error {
-	f, err := os.OpenFile(pathToAllKeys, os.O_CREATE|os.O_RDWR, 0755)
+	f, err := os.OpenFile(pathToAllKeys, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return err
 	}
@@ -185,5 +185,48 @@ func (ec *RecoverClient) RecoverKey(key string) (err error) {
 	for range ec.recoverClients {
 		logger.Info(<-ch2)
 	}
+	return
+}
+
+func (ec *RecoverClient) RecoverCheck(pathToAllKeys, pathToUnrecoverKeys string) (err error) {
+	totalNum := 0
+	needRecoverNum := 0
+	o, err := os.OpenFile(pathToUnrecoverKeys, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return
+	}
+	defer o.Close()
+	f, err := os.Open(pathToAllKeys)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	liner := bufio.NewReader(f)
+	for {
+		line, err := liner.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				fmt.Println("end with input file")
+			} else {
+				logger.Error(err)
+			}
+			break
+		}
+		key := strings.TrimSpace(line)
+		totalNum++
+		var needRecover bool
+		for _, recoverClient := range ec.recoverClients {
+			if has, _ := recoverClient.Client.Has(key); !has {
+				needRecover = true
+				break
+			}
+		}
+		if needRecover {
+			o.WriteString(fmt.Sprintf("%s\n", key))
+			needRecoverNum++
+		}
+	}
+	logger.Infof("total: %d", totalNum)
+	logger.Infof("need recover: %d", needRecoverNum)
 	return
 }
