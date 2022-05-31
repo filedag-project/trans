@@ -2,6 +2,7 @@ package trans
 
 import (
 	"encoding/binary"
+	"net"
 )
 
 const action_size = 1
@@ -42,7 +43,9 @@ type Head struct {
 func (m *Msg) Encode() []byte {
 	klen := len(m.Key)
 	vlen := len(m.Value)
-	ret := make([]byte, header_size+klen+vlen)
+	//ret := make([]byte, header_size+klen+vlen)
+	ret := vBuf.Get().(buffer)
+	ret.size(header_size + klen + vlen)
 	// action
 	ret[0] = byte(m.Act)
 	// key size
@@ -74,9 +77,12 @@ func (m *Msg) From(h *Head, buf []byte) {
 	copy(kb, buf[:h.KSize])
 	m.Key = string(kb)
 	// read value
-	vb := make([]byte, h.VSize)
-	copy(vb, buf[h.KSize:])
-	m.Value = vb
+	if m.Value == nil {
+		v := vBuf.Get().(buffer)
+		v.size(int(h.VSize))
+		m.Value = v
+	}
+	copy(m.Value, buf[h.KSize:])
 }
 
 func HeadFrom(buf []byte) (h *Head, err error) {
@@ -173,4 +179,19 @@ func ReplyHeadFrom(buf []byte) (h *ReplyHead, err error) {
 	// body size
 	h.BodySize = binary.LittleEndian.Uint32(buf[repcode_size:rephead_size])
 	return
+}
+
+func (r *Reply) Dump(w net.Conn) (n int, err error) {
+	blen := len(r.Body)
+	ret := vBuf.Get().(buffer)
+	ret.size(rephead_size + blen)
+	defer vBuf.Put(ret)
+	//ret := make([]byte, rephead_size+blen)
+	// action
+	ret[0] = byte(r.Code)
+	// body size
+	binary.LittleEndian.PutUint32(ret[repcode_size:rephead_size], uint32(blen))
+	// write value
+	copy(ret[rephead_size:], r.Body)
+	return w.Write(ret)
 }

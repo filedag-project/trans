@@ -69,7 +69,8 @@ func (s *PServ) handleConnection(conn net.Conn) {
 		case <-s.closeChan:
 			return
 		default:
-			buf := make([]byte, header_size)
+			//buf := make([]byte, header_size)
+			buf := headerBuf.Get().([]byte)
 			conn.SetReadDeadline(time.Now().Add(ReadHeaderTimeout))
 			n, err := io.ReadFull(conn, buf)
 			if err != nil {
@@ -95,6 +96,7 @@ func (s *PServ) handleConnection(conn net.Conn) {
 				logger.Errorf("handle conn: failed to deserialize head: %s", err)
 				return
 			}
+			headerBuf.Put(buf)
 			logger.Infof("server receive message, action: %s", h.Act)
 			switch h.Act {
 			case act_conn_close:
@@ -154,7 +156,10 @@ func (s *PServ) handleConnection(conn net.Conn) {
 }
 
 func (s *PServ) get(conn net.Conn, h *Head) error {
-	buf := make([]byte, h.KSize+h.VSize)
+	// buf := make([]byte, h.KSize+h.VSize)
+	buf := vBuf.Get().(buffer)
+	buf.size(int(h.KSize + h.VSize))
+	defer vBuf.Put(buf)
 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
 	n, err := io.ReadFull(conn, buf)
 	if err != nil {
@@ -165,6 +170,7 @@ func (s *PServ) get(conn net.Conn, h *Head) error {
 	}
 	msg := &Msg{}
 	msg.From(h, buf)
+	defer vBuf.Put(buffer(msg.Value))
 	v, err := s.kv.Get(msg.Key)
 	reply := &Reply{}
 	if err != nil {
@@ -174,20 +180,24 @@ func (s *PServ) get(conn net.Conn, h *Head) error {
 		}
 		reply.Body = []byte(err.Error())
 	} else {
+		vBuf.Put(buffer(msg.Value))
 		msg.Value = v
 		reply.Code = rep_success
 		reply.Body = msg.Encode()
 	}
 
 	conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
-	if _, err := conn.Write(reply.Encode()); err != nil {
+	if _, err := reply.Dump(conn); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (s *PServ) put(conn net.Conn, h *Head) error {
-	buf := make([]byte, h.KSize+h.VSize)
+	//buf := make([]byte, h.KSize+h.VSize)
+	buf := vBuf.Get().(buffer)
+	buf.size(int(h.KSize + h.VSize))
+	defer vBuf.Put(buf)
 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
 	n, err := io.ReadFull(conn, buf)
 	if err != nil {
@@ -198,6 +208,7 @@ func (s *PServ) put(conn net.Conn, h *Head) error {
 	}
 	msg := &Msg{}
 	msg.From(h, buf)
+	defer vBuf.Put(buffer(msg.Value))
 	err = s.kv.Put(msg.Key, msg.Value)
 	reply := &Reply{}
 	if err != nil {
@@ -206,15 +217,19 @@ func (s *PServ) put(conn net.Conn, h *Head) error {
 	} else {
 		reply.Code = rep_success
 	}
+
 	conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
-	if _, err := conn.Write(reply.Encode()); err != nil {
+	if _, err := reply.Dump(conn); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (s *PServ) size(conn net.Conn, h *Head) error {
-	buf := make([]byte, h.KSize+h.VSize)
+	//buf := make([]byte, h.KSize+h.VSize)
+	buf := vBuf.Get().(buffer)
+	buf.size(int(h.KSize + h.VSize))
+	defer vBuf.Put(buf)
 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
 	n, err := io.ReadFull(conn, buf)
 	if err != nil {
@@ -225,6 +240,7 @@ func (s *PServ) size(conn net.Conn, h *Head) error {
 	}
 	msg := &Msg{}
 	msg.From(h, buf)
+	defer vBuf.Put(buffer(msg.Value))
 	size, err := s.kv.Size(msg.Key)
 	reply := &Reply{}
 	if err != nil {
@@ -239,14 +255,17 @@ func (s *PServ) size(conn net.Conn, h *Head) error {
 	}
 
 	conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
-	if _, err := conn.Write(reply.Encode()); err != nil {
+	if _, err := reply.Dump(conn); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (s *PServ) delete(conn net.Conn, h *Head) error {
-	buf := make([]byte, h.KSize+h.VSize)
+	//buf := make([]byte, h.KSize+h.VSize)
+	buf := vBuf.Get().(buffer)
+	buf.size(int(h.KSize + h.VSize))
+	defer vBuf.Put(buf)
 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
 	n, err := io.ReadFull(conn, buf)
 	if err != nil {
@@ -257,6 +276,7 @@ func (s *PServ) delete(conn net.Conn, h *Head) error {
 	}
 	msg := &Msg{}
 	msg.From(h, buf)
+	defer vBuf.Put(buffer(msg.Value))
 	err = s.kv.Delete(msg.Key)
 	reply := &Reply{}
 	if err != nil {
@@ -265,8 +285,9 @@ func (s *PServ) delete(conn net.Conn, h *Head) error {
 	} else {
 		reply.Code = rep_success
 	}
+
 	conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
-	if _, err := conn.Write(reply.Encode()); err != nil {
+	if _, err := reply.Dump(conn); err != nil {
 		return err
 	}
 	return nil
@@ -282,14 +303,17 @@ func (s *PServ) pong(conn net.Conn) error {
 		Body: msg.Encode(),
 	}
 	conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
-	if _, err := conn.Write(reply.Encode()); err != nil {
+	if _, err := reply.Dump(conn); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (s *PServ) allKeys(conn net.Conn, h *Head) {
-	buf := make([]byte, h.KSize+h.VSize)
+	//buf := make([]byte, h.KSize+h.VSize)
+	buf := vBuf.Get().(buffer)
+	buf.size(int(h.KSize + h.VSize))
+	defer vBuf.Put(buf)
 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
 	n, err := io.ReadFull(conn, buf)
 	if err != nil {
@@ -299,8 +323,9 @@ func (s *PServ) allKeys(conn net.Conn, h *Head) {
 		logger.Errorf("read bytes not match expect %d, got %d", len(buf), n)
 		return
 	}
-	msg := &Msg{}
-	msg.From(h, buf)
+	// msg := &Msg{}
+	// msg.From(h, buf)
+	// vBuf.Put(buffer(msg.Value))
 
 	kc, err := s.kv.AllKeysChan(s.ctx)
 	if err != nil {
@@ -308,7 +333,7 @@ func (s *PServ) allKeys(conn net.Conn, h *Head) {
 		reply.Code = rep_failed
 		reply.Body = []byte(err.Error())
 		conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
-		if _, err := conn.Write(reply.Encode()); err != nil {
+		if _, err := reply.Dump(conn); err != nil {
 			return
 		}
 		return
@@ -328,7 +353,7 @@ func (s *PServ) allKeys(conn net.Conn, h *Head) {
 			reply.Code = rep_success
 			reply.Body = []byte(key)
 			conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
-			if _, err := conn.Write(reply.Encode()); err != nil {
+			if _, err := reply.Dump(conn); err != nil {
 				return
 			}
 		}
