@@ -53,6 +53,8 @@ func TestTransClient(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !bytes.Equal(v, d.v) {
+			t.Logf("v: %#v", v)
+			t.Logf("d.v: %s", d.v)
 			t.Fatal("value not match")
 		}
 	}

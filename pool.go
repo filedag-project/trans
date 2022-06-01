@@ -13,13 +13,16 @@ var (
 
 func init() {
 	headerBuf.New = func() interface{} {
-		return make([]byte, header_size)
+		b := make([]byte, header_size)
+		return &b
 	}
 	vBuf.New = func() interface{} {
-		return buffer(make([]byte, v_buf_size))
+		b := make([]byte, v_buf_size)
+		return &b
 	}
 	shortBuf.New = func() interface{} {
-		return buffer(make([]byte, short_buf_size))
+		b := make([]byte, short_buf_size)
+		return &b
 	}
 }
 
