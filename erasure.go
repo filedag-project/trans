@@ -127,7 +127,7 @@ func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 	if err != nil {
 		return nil, err
 	}
-	value = unwrapValue(value)
+	value, err = unwrapValue(value)
 	// check if we if do data recover for this get action
 	if nilDataCount > 0 && ec.mode == RecoverMode {
 		if recoverShards == nil || len(recoverShards) != len(ec.chunkClients) {
@@ -298,9 +298,15 @@ func wrapValue(v []byte) []byte {
 	return wv
 }
 
-func unwrapValue(v []byte) []byte {
+func unwrapValue(v []byte) ([]byte, error) {
+	if len(v) < 4 {
+		return nil, fmt.Errorf("erasure unwrapValue: value too short")
+	}
 	l := binary.LittleEndian.Uint32(v[:4])
-	return v[4 : 4+l]
+	if len(v) < int(4+l) {
+		return nil, fmt.Errorf("erasure unwrapValue: value size: %d, expected size: %d", len(v), 4+l)
+	}
+	return v[4 : 4+l], nil
 }
 
 func ErasueRecover(shards [][]byte, dataShards int, parShards int) (data [][]byte, err error) {
