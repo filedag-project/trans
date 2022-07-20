@@ -13,8 +13,8 @@ var (
 )
 
 var (
-	ReadHeaderTimeout  = time.Second * 15
-	ReadBodyTimeout    = time.Second * 20
-	WriteHeaderTimeout = time.Second * 15
-	WriteBodyTimeout   = time.Second * 20
+	ReadHeaderTimeout  = time.Second * 25
+	ReadBodyTimeout    = time.Second * 30
+	WriteHeaderTimeout = time.Second * 25
+	WriteBodyTimeout   = time.Second * 30
 )
