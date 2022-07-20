@@ -32,6 +32,7 @@ type Client interface {
 	AllKeysChan(string) (chan string, error)
 	Close()
 	TargetActive() bool
+	CheckSum(string) (string, error)
 }
 
 type payload struct {
@@ -281,6 +282,30 @@ func (tc *TransClient) Get(key string) ([]byte, error) {
 	v := make([]byte, len(msg.Value))
 	copy(v, msg.Value)
 	return v, nil
+}
+
+func (tc *TransClient) CheckSum(key string) (string, error) {
+	msg := &Msg{
+		Act: act_checksum,
+		Key: key,
+	}
+	ch := make(chan *Reply)
+	tc.payloadChan <- &payload{
+		in:  msg,
+		out: ch,
+	}
+	reply := <-ch
+	defer vBuf.Put(&reply.Body)
+	if reply.Code == rep_failed {
+		return "", fmt.Errorf("%s", reply.Body)
+	}
+	if reply.Code == rep_nofound {
+		return "", ErrNotFound
+	}
+
+	v := make([]byte, len(reply.Body))
+	copy(v, reply.Body)
+	return string(v), nil
 }
 
 func (tc *TransClient) Put(key string, value []byte) error {

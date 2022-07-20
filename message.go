@@ -22,6 +22,7 @@ const (
 	act_pong
 	act_conn_keep
 	act_conn_close
+	act_checksum
 )
 
 type Msg struct {

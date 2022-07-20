@@ -90,6 +90,10 @@ func (ec *ErasureClient) Delete(key string) (err error) {
 	return nil
 }
 
+func (ec *ErasureClient) CheckSum(key string) (string, error) {
+	return "", fmt.Errorf("CheckSum method not supported")
+}
+
 func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 	shardsNum := len(ec.chunkClients)
 	ch := make(chan ecres)

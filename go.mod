@@ -3,7 +3,7 @@ module github.com/filedag-project/trans
 go 1.17
 
 require (
-	github.com/filedag-project/mutcask v0.0.3
+	github.com/filedag-project/mutcask v0.0.4-0.20220720042406-04817a634484
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-cid v0.1.0
 	github.com/ipfs/go-ipfs-blockstore v1.0.2
@@ -14,6 +14,7 @@ require (
 
 require (
 	github.com/gogo/protobuf v1.2.1 // indirect
+	github.com/google/btree v1.1.2 // indirect
 	github.com/google/uuid v1.1.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect

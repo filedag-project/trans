@@ -116,6 +116,15 @@ func (s *PServ) handleConnection(conn net.Conn) {
 				}
 				conn.SetDeadline(time.Time{}) // clear time out
 				continue
+			case act_checksum:
+				if err := s.checksum(conn, h); err != nil {
+					logger.Errorf("failed during checksum act: %s", err)
+					if err == io.EOF {
+						return
+					}
+				}
+				conn.SetDeadline(time.Time{}) // clear time out
+				continue
 			case act_put:
 				if err := s.put(conn, h); err != nil {
 					logger.Errorf("failed during put act: %s", err)
@@ -153,6 +162,43 @@ func (s *PServ) handleConnection(conn net.Conn) {
 			}
 		}
 	}
+}
+
+func (s *PServ) checksum(conn net.Conn, h *Head) error {
+	// buf := make([]byte, h.KSize+h.VSize)
+	bufref := vBuf.Get().(*[]byte)
+	(*buffer)(bufref).size(int(h.KSize + h.VSize))
+	defer vBuf.Put(bufref)
+	buf := *bufref
+	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
+	n, err := io.ReadFull(conn, buf)
+	if err != nil {
+		return err
+	}
+	if n != len(buf) {
+		return fmt.Errorf("read bytes not match expect %d, got %d", len(buf), n)
+	}
+	msg := &Msg{}
+	msg.From(h, buf)
+	defer vBuf.Put(&msg.Value)
+	v, err := s.kv.CheckSum(msg.Key)
+	reply := &Reply{}
+	if err != nil {
+		reply.Code = rep_failed
+		if err == kv.ErrNotFound {
+			reply.Code = rep_nofound
+		}
+		reply.Body = []byte(err.Error())
+	} else {
+		reply.Code = rep_success
+		reply.Body = []byte(v)
+	}
+
+	conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
+	if _, err := reply.Dump(conn); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *PServ) get(conn net.Conn, h *Head) error {
