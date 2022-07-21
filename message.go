@@ -122,6 +122,8 @@ func (act action) String() string {
 		return "keep connection"
 	case act_conn_close:
 		return "close connection"
+	case act_checksum:
+		return "checksum"
 	default:
 		return "unknown action"
 	}
