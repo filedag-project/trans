@@ -125,6 +125,8 @@ func (tc *TransClient) initConns() {
 						fallthrough
 					case act_del:
 						fallthrough
+					case act_checksum:
+						fallthrough
 					case act_put:
 						err = tc.send(&conn, p, dialer, time.Since(idle) > maxIdle)
 						if err != nil {
