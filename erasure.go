@@ -16,6 +16,8 @@ var _ Client = (*ErasureClient)(nil)
 
 type ErasureClient struct {
 	chunkClients []Client
+	dataClients  []Client
+	parClients   []Client
 	dataShards   int
 	parShards    int
 	mode         string
@@ -33,6 +35,8 @@ func NewErasureClient(chunkClients []Client, dataShards, parShards int, mode str
 	}
 	return &ErasureClient{
 		chunkClients: chunkClients,
+		dataClients:  chunkClients[:dataShards],
+		parClients:   chunkClients[dataShards:],
 		dataShards:   dataShards,
 		parShards:    parShards,
 		mode:         mode,
@@ -96,8 +100,14 @@ func (ec *ErasureClient) CheckSum(key string) (string, error) {
 
 func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 	shardsNum := len(ec.chunkClients)
+	dataShardsNum := len(ec.dataClients)
+	parShardsNum := len(ec.parClients)
 	ch := make(chan ecres)
-	for i, client := range ec.chunkClients {
+	nilDataCount := 0
+	recoverIndex := make([]int, 0)
+	shards := make([][]byte, shardsNum)
+	// at first only get data chunks from data clients
+	for i, client := range ec.dataClients {
 		go func(idx int, client Client, ch chan ecres) {
 			res := ecres{
 				i: idx,
@@ -111,10 +121,45 @@ func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 			ch <- res
 		}(i, client, ch)
 	}
-	nilDataCount := 0
-	recoverIndex := make([]int, 0)
-	shards := make([][]byte, shardsNum)
-	for i := 0; i < shardsNum; i++ {
+	for i := 0; i < dataShardsNum; i++ {
+		res := <-ch
+		if res.e != nil {
+			logger.Warnf("fetch index: %d shard failed: %s", res.i, res.e)
+			nilDataCount++
+			recoverIndex = append(recoverIndex, res.i)
+		} else {
+			shards[res.i] = res.v
+		}
+	}
+	if nilDataCount == 0 { // success fetch all chunks from data clients
+		value, _, err = erasue_decode(shards, ec.dataShards, ec.parShards)
+		if err != nil {
+			return nil, err
+		}
+		value, err = unwrapValue(value)
+		return
+	}
+	if nilDataCount > ec.parShards { // if there is not enougth shards to reconstruct data, just respond as not found
+		return nil, ErrNotFound
+	}
+
+	// then get par chunks from par clients if there are failed fetchs from data clients
+	// neet to get par chunks to construct data back
+	for i, client := range ec.parClients {
+		go func(idx int, client Client, ch chan ecres) {
+			res := ecres{
+				i: idx,
+			}
+			v, err := client.Get(key)
+			if err != nil {
+				res.e = err
+			} else {
+				res.v = v
+			}
+			ch <- res
+		}(i+dataShardsNum, client, ch)
+	}
+	for i := 0; i < parShardsNum; i++ {
 		res := <-ch
 		if res.e != nil {
 			logger.Warnf("fetch index: %d shard failed: %s", res.i, res.e)
@@ -132,7 +177,10 @@ func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 		return nil, err
 	}
 	value, err = unwrapValue(value)
-	// check if we if do data recover for this get action
+	if err != nil {
+		return
+	}
+	// check if we need do data recover for this get action
 	if nilDataCount > 0 && ec.mode == RecoverMode {
 		if recoverShards == nil || len(recoverShards) != len(ec.chunkClients) {
 			logger.Warnf("recover mode - need recover but lack of shards data")
