@@ -9,6 +9,7 @@ import (
 	"time"
 
 	kv "github.com/filedag-project/mutcask"
+	"github.com/xtaci/kcp-go/v5"
 )
 
 type PServ struct {
@@ -37,7 +38,7 @@ func NewPServ(ctx context.Context, attr string, db kv.KVDB) (*PServ, error) {
 }
 
 func (s *PServ) serv() {
-	l, err := net.Listen("tcp", s.attr)
+	l, err := kcp.Listen(s.attr)
 	if err != nil {
 		panic(err)
 	}

@@ -9,6 +9,7 @@ require (
 	github.com/ipfs/go-ipfs-blockstore v1.0.2
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/klauspost/reedsolomon v1.9.16
+	github.com/xtaci/kcp-go/v5 v5.6.1
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f
 )
 
@@ -39,7 +40,11 @@ require (
 	github.com/multiformats/go-multihash v0.0.15 // indirect
 	github.com/multiformats/go-varint v0.0.6 // indirect
 	github.com/opentracing/opentracing-go v1.0.2 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
+	github.com/templexxx/cpu v0.0.7 // indirect
+	github.com/templexxx/xorsimd v0.4.1 // indirect
+	github.com/tjfoc/gmsm v1.3.2 // indirect
 	github.com/whyrusleeping/go-logging v0.0.0-20170515211332-0457bb6b88fc // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/atomic v1.7.0 // indirect

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/xtaci/kcp-go/v5"
 )
 
 var logger = logging.Logger("piecestore-trans")
@@ -81,9 +82,9 @@ func (tc *TransClient) initConns() {
 	for i := 0; i < tc.connNum; i++ {
 		go func(tc *TransClient) {
 			var conn net.Conn
-			var dialer = net.Dialer{
-				Timeout: time.Second * 10,
-			}
+			// var dialer = net.Dialer{
+			// 	Timeout: time.Second * 10,
+			// }
 			var err error
 			var idle time.Time = time.Now()
 			var maxIdle = time.Second * 15
@@ -108,7 +109,7 @@ func (tc *TransClient) initConns() {
 						continue
 					}
 					if conn == nil {
-						if conn, err = dialer.Dial("tcp", tc.target); err != nil {
+						if conn, err = kcp.Dial(tc.target); err != nil {
 							logger.Errorf("failed to dail up: %s, %s", tc.target, err)
 							p.out <- &Reply{
 								Code: rep_failed,
@@ -128,7 +129,7 @@ func (tc *TransClient) initConns() {
 					case act_checksum:
 						fallthrough
 					case act_put:
-						err = tc.send(&conn, p, dialer, time.Since(idle) > maxIdle)
+						err = tc.send(&conn, p, time.Since(idle) > maxIdle)
 						if err != nil {
 							if conn != nil {
 								conn.Close()
@@ -154,9 +155,6 @@ func (tc *TransClient) initConns() {
 func (tc *TransClient) servAllKeysChan() {
 	for i := 0; i < defaultConnForAllKeysChan; i++ {
 		go func(tc *TransClient) {
-			var dialer = net.Dialer{
-				Timeout: time.Second * 10,
-			}
 			for {
 				select {
 				case <-tc.ctx.Done():
@@ -174,7 +172,7 @@ func (tc *TransClient) servAllKeysChan() {
 							return
 						}
 
-						conn, err := dialer.Dial("tcp", tc.target)
+						conn, err := kcp.Dial(tc.target)
 						if err != nil {
 							logger.Errorf("failed to dail up: %s, %s", tc.target, err)
 							p.out <- &Reply{
@@ -360,7 +358,7 @@ func (tc *TransClient) AllKeysChan(startKey string) (chan string, error) {
 	return kc, nil
 }
 
-func (tc *TransClient) send(connPtr *net.Conn, p *payload, dialer net.Dialer, exceedIdleTime bool) (err error) {
+func (tc *TransClient) send(connPtr *net.Conn, p *payload, exceedIdleTime bool) (err error) {
 	retried := false
 	conn := *connPtr
 	logger.Infof("send msg: %s: %s, exceedIdleTime: %v", p.in.Act, p.in.Key, exceedIdleTime)
@@ -384,7 +382,7 @@ START_SEND:
 			logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
 			return
 		}
-		newConn, e := dialer.Dial("tcp", tc.target)
+		newConn, e := kcp.Dial(tc.target)
 		if e != nil {
 			logger.Error("failed to dail up: ", e)
 			err = e
@@ -407,7 +405,7 @@ START_SEND:
 			return
 		}
 		// idle too long, maybe we need have to try more time and create a new conn
-		newConn, e := dialer.Dial("tcp", tc.target)
+		newConn, e := kcp.Dial(tc.target)
 		if e != nil {
 			logger.Error("failed to dail up: ", e)
 			err = e
@@ -509,9 +507,6 @@ func (tc *TransClient) Close() {
 func (tc *TransClient) pingTarget() {
 	go func(tc *TransClient) {
 		var conn net.Conn
-		var dialer = net.Dialer{
-			Timeout: time.Second * 10,
-		}
 		var err error
 		ticker := time.NewTicker(time.Second * 3)
 		defer func() {
@@ -527,7 +522,7 @@ func (tc *TransClient) pingTarget() {
 				return
 			case <-ticker.C:
 				if conn == nil {
-					if conn, err = dialer.Dial("tcp", tc.target); err != nil {
+					if conn, err = kcp.Dial(tc.target); err != nil {
 						atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
 						logger.Errorf("ping - failed to dail up: %s", tc.target)
 						logger.Infof("ping - set target state: %d", tc.targetState)
