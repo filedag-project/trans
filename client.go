@@ -467,6 +467,7 @@ func (tc *TransClient) sendGetKeys(conn net.Conn, p *payload) {
 		default:
 			if err := func() error {
 				//buf := make([]byte, rephead_size)
+				conn.Write([]byte{1})
 				buf := shortBuf.Get().(*[]byte)
 				defer shortBuf.Put(buf)
 				(*buffer)(buf).size(rephead_size)
@@ -491,6 +492,10 @@ func (tc *TransClient) sendGetKeys(conn net.Conn, p *payload) {
 				}
 				rep := &Reply{}
 				rep.From(h, *buf)
+				if string(rep.Body) == "EOF" {
+					logger.Warnf("reach EOF")
+					return fmt.Errorf("EOF")
+				}
 				p.out <- rep
 				return nil
 			}(); err != nil {

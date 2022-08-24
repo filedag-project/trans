@@ -397,14 +397,21 @@ func (s *PServ) allKeys(conn net.Conn, h *Head) {
 		case <-s.closeChan:
 			return
 		case key := <-kc:
-			if key == "" {
-				return
-			}
+			b := []byte{0}
+			io.ReadFull(conn, b)
 			reply := &Reply{}
 			reply.Code = rep_success
-			reply.Body = []byte(key)
+			if key != "" {
+				reply.Body = []byte(key)
+			} else {
+				reply.Body = []byte("EOF")
+			}
+
 			conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
 			if _, err := reply.Dump(conn); err != nil {
+				return
+			}
+			if key == "" {
 				return
 			}
 		}
