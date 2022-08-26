@@ -10,7 +10,7 @@ import (
 
 func TestPServ(t *testing.T) {
 	db := kv.NewMemkv()
-	serv, err := NewPServ(context.TODO(), ":3512", db)
+	serv, err := NewPServ(context.TODO(), ":3512", db, "tcp")
 	if err != nil {
 		t.Fatal("failed to instance PServ ", err)
 	}

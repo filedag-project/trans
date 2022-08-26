@@ -131,7 +131,7 @@ func NewErasureBlockstore(ctx context.Context, servAddrs []string, connNum int, 
 	}
 	chunkClients := make([]Client, len(servAddrs))
 	for i, addr := range servAddrs {
-		chunkClients[i] = NewTransClient(ctx, addr, connNum)
+		chunkClients[i] = NewTransClient(ctx, addr, connNum, "tcp")
 	}
 	era, err := NewErasureClient(chunkClients, dataShards, parShards, mode)
 	if err != nil {

@@ -3,17 +3,19 @@ module github.com/filedag-project/trans
 go 1.17
 
 require (
-	github.com/filedag-project/mutcask v0.1.0
+	github.com/filedag-project/mutcask v0.1.1
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-cid v0.1.0
 	github.com/ipfs/go-ipfs-blockstore v1.0.2
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/klauspost/reedsolomon v1.9.16
+	github.com/urfave/cli/v2 v2.11.2
 	github.com/xtaci/kcp-go/v5 v5.6.1
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f
 )
 
 require (
+	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/fxamacker/cbor/v2 v2.4.0 // indirect
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
@@ -41,12 +43,14 @@ require (
 	github.com/multiformats/go-varint v0.0.6 // indirect
 	github.com/opentracing/opentracing-go v1.0.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	github.com/templexxx/cpu v0.0.7 // indirect
 	github.com/templexxx/xorsimd v0.4.1 // indirect
 	github.com/tjfoc/gmsm v1.3.2 // indirect
 	github.com/whyrusleeping/go-logging v0.0.0-20170515211332-0457bb6b88fc // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.19.1 // indirect

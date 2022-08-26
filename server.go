@@ -18,14 +18,16 @@ type PServ struct {
 	attr      string // net listen address
 	closeChan chan struct{}
 	close     func()
+	protocol  string
 }
 
-func NewPServ(ctx context.Context, attr string, db kv.KVDB) (*PServ, error) {
+func NewPServ(ctx context.Context, attr string, db kv.KVDB, protocol string) (*PServ, error) {
 	srv := &PServ{
 		ctx:       ctx,
 		kv:        db,
 		attr:      attr,
 		closeChan: make(chan struct{}),
+		protocol:  protocol,
 	}
 	var once sync.Once
 	srv.close = func() {
@@ -37,8 +39,19 @@ func NewPServ(ctx context.Context, attr string, db kv.KVDB) (*PServ, error) {
 	return srv, nil
 }
 
+func (s *PServ) listen(attr string) (net.Listener, error) {
+	if s.protocol == "kcp" {
+		return kcp.Listen(attr)
+	}
+	if s.protocol == "tcp" {
+		return net.Listen("tcp", attr)
+	}
+
+	return nil, fmt.Errorf("unsupported protocol: %s", s.protocol)
+}
+
 func (s *PServ) serv() {
-	l, err := kcp.Listen(s.attr)
+	l, err := s.listen(s.attr)
 	if err != nil {
 		panic(err)
 	}
@@ -249,6 +262,7 @@ func (s *PServ) put(conn net.Conn, h *Head) error {
 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
 	n, err := io.ReadFull(conn, buf)
 	if err != nil {
+		logger.Error(err)
 		return err
 	}
 	if n != len(buf) {
@@ -268,6 +282,7 @@ func (s *PServ) put(conn net.Conn, h *Head) error {
 
 	conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
 	if _, err := reply.Dump(conn); err != nil {
+		logger.Error(err)
 		return err
 	}
 	return nil

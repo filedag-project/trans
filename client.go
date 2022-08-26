@@ -52,9 +52,10 @@ type TransClient struct {
 	allKeysChan chan *payload
 	closeChan   chan struct{}
 	close       func()
+	protocol    string
 }
 
-func NewTransClient(ctx context.Context, target string, connNum int) *TransClient {
+func NewTransClient(ctx context.Context, target string, connNum int, protocol string) *TransClient {
 	if connNum <= 0 {
 		connNum = defaultConnNum
 	}
@@ -65,6 +66,7 @@ func NewTransClient(ctx context.Context, target string, connNum int) *TransClien
 		payloadChan: make(chan *payload),
 		allKeysChan: make(chan *payload),
 		closeChan:   make(chan struct{}),
+		protocol:    protocol,
 	}
 	var once sync.Once
 	tra.close = func() {
@@ -76,6 +78,19 @@ func NewTransClient(ctx context.Context, target string, connNum int) *TransClien
 	tra.initConns()
 	tra.servAllKeysChan()
 	return tra
+}
+
+func (tc *TransClient) dial(target string) (net.Conn, error) {
+	if tc.protocol == "kcp" {
+		return kcp.Dial(target)
+	}
+	if tc.protocol == "tcp" {
+		dialer := net.Dialer{
+			Timeout: time.Second * 10,
+		}
+		return dialer.Dial("tcp", target)
+	}
+	return nil, fmt.Errorf("unsupported protocol: %s", tc.protocol)
 }
 
 func (tc *TransClient) initConns() {
@@ -109,7 +124,7 @@ func (tc *TransClient) initConns() {
 						continue
 					}
 					if conn == nil {
-						if conn, err = kcp.Dial(tc.target); err != nil {
+						if conn, err = tc.dial(tc.target); err != nil {
 							logger.Errorf("failed to dail up: %s, %s", tc.target, err)
 							p.out <- &Reply{
 								Code: rep_failed,
@@ -172,7 +187,7 @@ func (tc *TransClient) servAllKeysChan() {
 							return
 						}
 
-						conn, err := kcp.Dial(tc.target)
+						conn, err := tc.dial(tc.target)
 						if err != nil {
 							logger.Errorf("failed to dail up: %s, %s", tc.target, err)
 							p.out <- &Reply{
@@ -382,7 +397,7 @@ START_SEND:
 			logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
 			return
 		}
-		newConn, e := kcp.Dial(tc.target)
+		newConn, e := tc.dial(tc.target)
 		if e != nil {
 			logger.Error("failed to dail up: ", e)
 			err = e
@@ -405,7 +420,7 @@ START_SEND:
 			return
 		}
 		// idle too long, maybe we need have to try more time and create a new conn
-		newConn, e := kcp.Dial(tc.target)
+		newConn, e := tc.dial(tc.target)
 		if e != nil {
 			logger.Error("failed to dail up: ", e)
 			err = e
@@ -527,7 +542,7 @@ func (tc *TransClient) pingTarget() {
 				return
 			case <-ticker.C:
 				if conn == nil {
-					if conn, err = kcp.Dial(tc.target); err != nil {
+					if conn, err = tc.dial(tc.target); err != nil {
 						atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
 						logger.Errorf("ping - failed to dail up: %s", tc.target)
 						logger.Infof("ping - set target state: %d", tc.targetState)

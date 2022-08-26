@@ -11,12 +11,13 @@ import (
 )
 
 func TestErasureClient(t *testing.T) {
+	protocol := "tcp"
 	ctx := context.Background()
 	addrList := []string{":3312", ":3313", ":3314", ":3315", ":3316"}
 	chunkServers := make([]*PServ, len(addrList))
 	for i, addr := range addrList {
 		db := kv.NewMemkv()
-		serv, err := NewPServ(ctx, addr, db)
+		serv, err := NewPServ(ctx, addr, db, protocol)
 		if err != nil {
 			t.Fatal("failed to instance PServ ", err)
 		}
@@ -28,7 +29,7 @@ func TestErasureClient(t *testing.T) {
 
 	chunkClients := make([]Client, len(addrList))
 	for i, addr := range addrList {
-		cli := NewTransClient(ctx, "127.0.0.1"+addr, 1)
+		cli := NewTransClient(ctx, "127.0.0.1"+addr, 1, protocol)
 		defer cli.Close()
 		chunkClients[i] = cli
 	}
@@ -86,12 +87,13 @@ func TestErasureClient(t *testing.T) {
 }
 
 func TestErasureClientRecoverMode(t *testing.T) {
+	protocol := "tcp"
 	ctx := context.Background()
 	addrList := []string{":3212", ":3213", ":3214", ":3215", ":3216"}
 	chunkServers := make([]*PServ, len(addrList))
 	for i, addr := range addrList {
 		db := kv.NewMemkv()
-		serv, err := NewPServ(ctx, addr, db)
+		serv, err := NewPServ(ctx, addr, db, protocol)
 		if err != nil {
 			t.Fatal("failed to instance PServ ", err)
 		}
@@ -103,7 +105,7 @@ func TestErasureClientRecoverMode(t *testing.T) {
 
 	chunkClients := make([]Client, len(addrList))
 	for i, addr := range addrList {
-		cli := NewTransClient(ctx, "127.0.0.1"+addr, 1)
+		cli := NewTransClient(ctx, "127.0.0.1"+addr, 1, protocol)
 		defer cli.Close()
 		chunkClients[i] = cli
 	}

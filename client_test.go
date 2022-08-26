@@ -25,18 +25,19 @@ var tdata = []pair{
 }
 
 func TestTransClient(t *testing.T) {
+	protocol := "tcp"
 	logging.SetLogLevel("*", "info")
 	ctx := context.Background()
 	addr := ":3410"
 	db := kv.NewMemkv()
-	serv, err := NewPServ(ctx, addr, db)
+	serv, err := NewPServ(ctx, addr, db, protocol)
 	if err != nil {
 		t.Fatal("failed to instance PServ ", err)
 	}
 	// wait for server setup listener
 	time.Sleep(time.Millisecond * 100)
 	defer serv.Close()
-	client := NewTransClient(ctx, "127.0.0.1"+addr, 1)
+	client := NewTransClient(ctx, "127.0.0.1"+addr, 1, protocol)
 	defer client.Close()
 
 	// test put data
