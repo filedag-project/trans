@@ -112,7 +112,6 @@ func (ec *ErasureClient) get(key string) (value []byte, err error) {
 	parShardsNum := len(ec.parClients)
 	ch := make(chan ecres)
 	nilDataCount := 0
-	recoverIndex := make([]int, 0)
 	shards := make([][]byte, shardsNum)
 	// at first only get data chunks from data clients
 	for i, client := range ec.dataClients {
@@ -134,7 +133,6 @@ func (ec *ErasureClient) get(key string) (value []byte, err error) {
 		if res.e != nil {
 			logger.Warnf("fetch index: %d shard failed: %s", res.i, res.e)
 			nilDataCount++
-			recoverIndex = append(recoverIndex, res.i)
 		} else {
 			shards[res.i] = res.v
 		}
@@ -172,7 +170,6 @@ func (ec *ErasureClient) get(key string) (value []byte, err error) {
 		if res.e != nil {
 			logger.Warnf("fetch index: %d shard failed: %s", res.i, res.e)
 			nilDataCount++
-			recoverIndex = append(recoverIndex, res.i)
 		} else {
 			shards[res.i] = res.v
 		}
