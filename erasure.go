@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/klauspost/reedsolomon"
@@ -99,6 +100,13 @@ func (ec *ErasureClient) CheckSum(key string) (string, error) {
 }
 
 func (ec *ErasureClient) Get(key string) (value []byte, err error) {
+	if ec.mode == RecoverMode {
+		return ec.recoverAfterGet(key)
+	}
+	return ec.get(key)
+}
+
+func (ec *ErasureClient) get(key string) (value []byte, err error) {
 	shardsNum := len(ec.chunkClients)
 	dataShardsNum := len(ec.dataClients)
 	parShardsNum := len(ec.parClients)
@@ -132,7 +140,7 @@ func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 		}
 	}
 	if nilDataCount == 0 { // success fetch all chunks from data clients
-		value, _, err = erasue_decode(shards, ec.dataShards, ec.parShards)
+		value, _, err = erasue_decode(shards, ec.dataShards, ec.parShards, ec.mode)
 		if err != nil {
 			return nil, err
 		}
@@ -172,7 +180,61 @@ func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 	if nilDataCount > ec.parShards { // if there is not enougth shards to reconstruct data, just respond as not found
 		return nil, ErrNotFound
 	}
-	value, recoverShards, err := erasue_decode(shards, ec.dataShards, ec.parShards)
+	value, _, err = erasue_decode(shards, ec.dataShards, ec.parShards, ec.mode)
+	if err != nil {
+		return nil, err
+	}
+	value, err = unwrapValue(value)
+	if err != nil {
+		return
+	}
+	return
+}
+
+func (ec *ErasureClient) recoverAfterGet(key string) (value []byte, err error) {
+	shardsNum := len(ec.chunkClients)
+	ch := make(chan ecres)
+	nilDataCount := 0
+	recoverIndex := make([]int, 0)
+	shards := make([][]byte, shardsNum)
+
+	for i, client := range ec.chunkClients {
+		go func(idx int, client Client, ch chan ecres) {
+			res := ecres{
+				i: idx,
+			}
+			v, err := client.Get(key)
+			if err != nil {
+				res.e = err
+			} else {
+				res.v = v
+			}
+			ch <- res
+		}(i, client, ch)
+	}
+	for i := 0; i < shardsNum; i++ {
+		res := <-ch
+		if res.e != nil {
+			logger.Warnf("fetch index: %d shard failed: %s", res.i, res.e)
+			nilDataCount++
+			recoverIndex = append(recoverIndex, res.i)
+		} else {
+			shards[res.i] = res.v
+		}
+	}
+	if nilDataCount == 0 { // success fetch all chunks from data clients
+		value, _, err = erasue_decode(shards, ec.dataShards, ec.parShards, "")
+		if err != nil {
+			return nil, err
+		}
+		value, err = unwrapValue(value)
+		return
+	}
+	if nilDataCount > ec.parShards { // if there is not enougth shards to reconstruct data, just respond as not found
+		return nil, ErrNotFound
+	}
+
+	value, recoverShards, err := erasue_decode(shards, ec.dataShards, ec.parShards, ec.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -186,13 +248,19 @@ func (ec *ErasureClient) Get(key string) (value []byte, err error) {
 			logger.Warnf("recover mode - need recover but lack of shards data")
 			return
 		}
+		var wg sync.WaitGroup
 		for _, idx := range recoverIndex {
+			wg.Add(1)
 			go func(idx int, client Client, key string, value []byte) {
+				defer func() {
+					wg.Done()
+				}()
 				if err := client.Put(key, value); err != nil {
 					logger.Errorf("recover mode - recover failed after get action for client:%d, key: %s, error: %s", idx, key, err)
 				}
 			}(idx, ec.chunkClients[idx], key, recoverShards[idx])
 		}
+		wg.Wait()
 	}
 	return
 }
@@ -318,7 +386,7 @@ type ecres struct {
 	s int
 }
 
-func erasue_decode(shards [][]byte, dataShards int, parShards int) (data []byte, recoverShards [][]byte, err error) {
+func erasue_decode(shards [][]byte, dataShards int, parShards int, mode string) (data []byte, recoverShards [][]byte, err error) {
 	bs := bytes.NewBuffer([]byte{})
 	var needReconstructed bool
 	var shardLen int
@@ -336,7 +404,7 @@ func erasue_decode(shards [][]byte, dataShards int, parShards int) (data []byte,
 		}
 		shardLen = n
 	}
-	if !needReconstructed {
+	if mode != RecoverMode && !needReconstructed {
 		return bs.Bytes(), nil, nil
 	}
 	return ErasueDecode(shards, dataShards, parShards)
