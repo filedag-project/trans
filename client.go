@@ -2,16 +2,15 @@ package trans
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/lucas-clemente/quic-go"
 )
 
 var logger = logging.Logger("piecestore-trans")
@@ -52,21 +51,13 @@ type TransClient struct {
 	allKeysChan chan *payload
 	closeChan   chan struct{}
 	close       func()
-	qc          quic.Connection
 }
 
 func NewTransClient(ctx context.Context, target string, connNum int) *TransClient {
 	if connNum <= 0 {
 		connNum = defaultConnNum
 	}
-	tlsConf := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{QUIC_PROTOCOL},
-	}
-	dialer, err := quic.DialAddr(target, tlsConf, nil)
-	if err != nil {
-		panic(err)
-	}
+
 	tra := &TransClient{
 		ctx:         ctx,
 		target:      target,
@@ -74,7 +65,6 @@ func NewTransClient(ctx context.Context, target string, connNum int) *TransClien
 		payloadChan: make(chan *payload),
 		allKeysChan: make(chan *payload),
 		closeChan:   make(chan struct{}),
-		qc:          dialer,
 	}
 	var once sync.Once
 	tra.close = func() {
@@ -91,9 +81,11 @@ func NewTransClient(ctx context.Context, target string, connNum int) *TransClien
 func (tc *TransClient) initConns() {
 	for i := 0; i < tc.connNum; i++ {
 		go func(tc *TransClient) {
-			var conn quic.Stream
+			var conn net.Conn
+			var dialer = net.Dialer{
+				Timeout: time.Second * 10,
+			}
 			var err error
-
 			var idle time.Time = time.Now()
 			var maxIdle = time.Second * 15
 			defer func() {
@@ -118,7 +110,7 @@ func (tc *TransClient) initConns() {
 					}
 
 					if conn == nil {
-						conn, err = tc.qc.OpenStreamSync(tc.ctx)
+						conn, err = dialer.Dial("tcp", tc.target)
 						if err != nil {
 							logger.Errorf("failed to open stream: %s", err)
 							continue
@@ -135,7 +127,7 @@ func (tc *TransClient) initConns() {
 					case act_checksum:
 						fallthrough
 					case act_put:
-						err = tc.send(&conn, p, time.Since(idle) > maxIdle)
+						err = tc.send(&conn, p, dialer, time.Since(idle) > maxIdle)
 						if err != nil {
 							if conn != nil {
 								conn.Close()
@@ -161,9 +153,8 @@ func (tc *TransClient) initConns() {
 func (tc *TransClient) servAllKeysChan() {
 	for i := 0; i < defaultConnForAllKeysChan; i++ {
 		go func(tc *TransClient) {
-			tlsConf := &tls.Config{
-				InsecureSkipVerify: true,
-				NextProtos:         []string{QUIC_PROTOCOL},
+			var dialer = net.Dialer{
+				Timeout: time.Second * 10,
 			}
 			for {
 				select {
@@ -181,19 +172,9 @@ func (tc *TransClient) servAllKeysChan() {
 							}
 							return
 						}
-						dialer, err := quic.DialAddr(tc.target, tlsConf, nil)
+						conn, err := dialer.Dial("tcp", tc.target)
 						if err != nil {
 							logger.Errorf("failed to dail up: %s, %s", tc.target, err)
-							p.out <- &Reply{
-								Code: rep_failed,
-								Body: []byte(err.Error()),
-							}
-							return
-						}
-
-						conn, err := dialer.OpenStreamSync(tc.ctx)
-						if err != nil {
-							logger.Errorf("failed to open stream: %s", err)
 							p.out <- &Reply{
 								Code: rep_failed,
 								Body: []byte(err.Error()),
@@ -377,7 +358,7 @@ func (tc *TransClient) AllKeysChan(startKey string) (chan string, error) {
 	return kc, nil
 }
 
-func (tc *TransClient) send(connPtr *quic.Stream, p *payload, exceedIdleTime bool) (err error) {
+func (tc *TransClient) send(connPtr *net.Conn, p *payload, dialer net.Dialer, exceedIdleTime bool) (err error) {
 	retried := false
 	conn := *connPtr
 	logger.Infof("send msg: %s: %s, exceedIdleTime: %v", p.in.Act, p.in.Key, exceedIdleTime)
@@ -401,7 +382,7 @@ START_SEND:
 			logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
 			return
 		}
-		newConn, e := tc.qc.AcceptStream(tc.ctx)
+		newConn, e := dialer.Dial("tcp", tc.target)
 		if e != nil {
 			logger.Error("failed to dail up: ", e)
 			err = e
@@ -424,7 +405,7 @@ START_SEND:
 			return
 		}
 		// idle too long, maybe we need have to try more time and create a new conn
-		newConn, e := tc.qc.AcceptStream(tc.ctx)
+		newConn, e := dialer.Dial("tcp", tc.target)
 		if e != nil {
 			logger.Error("failed to dail up: ", e)
 			err = e
@@ -455,7 +436,7 @@ START_SEND:
 	return
 }
 
-func (tc *TransClient) sendGetKeys(conn quic.Stream, p *payload) {
+func (tc *TransClient) sendGetKeys(conn net.Conn, p *payload) {
 	var err error
 	logger.Infof("send msg: %s: %s", p.in.Act, p.in.Key)
 	defer func() {
@@ -525,7 +506,10 @@ func (tc *TransClient) Close() {
 
 func (tc *TransClient) pingTarget() {
 	go func(tc *TransClient) {
-		var conn quic.Stream
+		var conn net.Conn
+		var dialer = net.Dialer{
+			Timeout: time.Second * 10,
+		}
 		var err error
 		ticker := time.NewTicker(time.Second * 5)
 		defer func() {
@@ -541,8 +525,7 @@ func (tc *TransClient) pingTarget() {
 				return
 			case <-ticker.C:
 				if conn == nil {
-					conn, err = tc.qc.AcceptStream(tc.ctx)
-					if err != nil {
+					if conn, err = dialer.Dial("tcp", tc.target); err != nil {
 						atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
 						logger.Errorf("ping - failed to dail up: %s", tc.target)
 						logger.Infof("ping - set target state: %d", tc.targetState)
@@ -562,7 +545,7 @@ func (tc *TransClient) pingTarget() {
 	}(tc)
 }
 
-func (tc *TransClient) ping(conn quic.Stream) (err error) {
+func (tc *TransClient) ping(conn net.Conn) (err error) {
 	logger.Infof("ping start")
 
 	msg := &Msg{

@@ -2,8 +2,7 @@ package trans
 
 import (
 	"encoding/binary"
-
-	"github.com/lucas-clemente/quic-go"
+	"net"
 )
 
 const action_size = 1
@@ -187,7 +186,7 @@ func ReplyHeadFrom(buf []byte) (h *ReplyHead, err error) {
 	return
 }
 
-func (r *Reply) Dump(w quic.Stream) (n int, err error) {
+func (r *Reply) Dump(w net.Conn) (n int, err error) {
 	blen := len(r.Body)
 	retref := vBuf.Get().(*[]byte)
 	(*buffer)(retref).size(rephead_size + blen)

@@ -4,22 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 	"time"
 
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
-	"math/big"
-
 	kv "github.com/filedag-project/mutcask"
-
-	"github.com/lucas-clemente/quic-go"
 )
-
-const QUIC_PROTOCOL = "trans-quic-proto"
 
 type PServ struct {
 	ctx       context.Context
@@ -47,11 +37,10 @@ func NewPServ(ctx context.Context, addr string, db kv.KVDB) (*PServ, error) {
 }
 
 func (s *PServ) serv() {
-	l, err := quic.ListenAddr(s.addr, generateTLSConfig(), nil)
+	l, err := net.Listen("tcp", s.addr)
 	if err != nil {
 		panic(err)
 	}
-
 	defer l.Close()
 	for {
 		select {
@@ -60,35 +49,16 @@ func (s *PServ) serv() {
 		case <-s.closeChan:
 			return
 		default:
-			conn, err := l.Accept(s.ctx)
+			conn, err := l.Accept()
 			if err != nil {
-				logger.Warnf("failed when accept connection: %s", err)
-				continue
+				panic(fmt.Errorf("failed when accept connection: %s", err))
 			}
-			go func() {
-				for {
-					select {
-					case <-s.ctx.Done():
-						return
-					case <-s.closeChan:
-						return
-					default:
-						stream, err := conn.AcceptStream(s.ctx)
-						if err != nil {
-							logger.Warnf("failed when accept stream: %s", err)
-							continue
-						}
-						go s.handleConnection(stream)
-					}
-				}
-
-			}()
-
+			go s.handleConnection(conn)
 		}
 	}
 }
 
-func (s *PServ) handleConnection(conn quic.Stream) {
+func (s *PServ) handleConnection(conn net.Conn) {
 	defer conn.Close()
 	retry := 0
 	max_retry := 1
@@ -194,7 +164,7 @@ func (s *PServ) handleConnection(conn quic.Stream) {
 	}
 }
 
-func (s *PServ) checksum(conn quic.Stream, h *Head) error {
+func (s *PServ) checksum(conn net.Conn, h *Head) error {
 	// buf := make([]byte, h.KSize+h.VSize)
 	bufref := vBuf.Get().(*[]byte)
 	(*buffer)(bufref).size(int(h.KSize + h.VSize))
@@ -231,7 +201,7 @@ func (s *PServ) checksum(conn quic.Stream, h *Head) error {
 	return nil
 }
 
-func (s *PServ) get(conn quic.Stream, h *Head) error {
+func (s *PServ) get(conn net.Conn, h *Head) error {
 	// buf := make([]byte, h.KSize+h.VSize)
 	bufref := vBuf.Get().(*[]byte)
 	(*buffer)(bufref).size(int(h.KSize + h.VSize))
@@ -269,7 +239,7 @@ func (s *PServ) get(conn quic.Stream, h *Head) error {
 	return nil
 }
 
-func (s *PServ) put(conn quic.Stream, h *Head) error {
+func (s *PServ) put(conn net.Conn, h *Head) error {
 	// buf := make([]byte, h.KSize+h.VSize)
 	bufref := vBuf.Get().(*[]byte)
 	(*buffer)(bufref).size(int(h.KSize + h.VSize))
@@ -302,7 +272,7 @@ func (s *PServ) put(conn quic.Stream, h *Head) error {
 	return nil
 }
 
-func (s *PServ) size(conn quic.Stream, h *Head) error {
+func (s *PServ) size(conn net.Conn, h *Head) error {
 	// buf := make([]byte, h.KSize+h.VSize)
 	bufref := vBuf.Get().(*[]byte)
 	(*buffer)(bufref).size(int(h.KSize + h.VSize))
@@ -339,7 +309,7 @@ func (s *PServ) size(conn quic.Stream, h *Head) error {
 	return nil
 }
 
-func (s *PServ) delete(conn quic.Stream, h *Head) error {
+func (s *PServ) delete(conn net.Conn, h *Head) error {
 	// buf := make([]byte, h.KSize+h.VSize)
 	bufref := vBuf.Get().(*[]byte)
 	(*buffer)(bufref).size(int(h.KSize + h.VSize))
@@ -372,7 +342,7 @@ func (s *PServ) delete(conn quic.Stream, h *Head) error {
 	return nil
 }
 
-func (s *PServ) pong(conn quic.Stream) error {
+func (s *PServ) pong(conn net.Conn) error {
 	msg := &Msg{
 		Act: act_pong,
 	}
@@ -388,7 +358,7 @@ func (s *PServ) pong(conn quic.Stream) error {
 	return nil
 }
 
-func (s *PServ) allKeys(conn quic.Stream, h *Head) {
+func (s *PServ) allKeys(conn net.Conn, h *Head) {
 	// buf := make([]byte, h.KSize+h.VSize)
 	bufref := vBuf.Get().(*[]byte)
 	(*buffer)(bufref).size(int(h.KSize + h.VSize))
@@ -442,28 +412,4 @@ func (s *PServ) allKeys(conn quic.Stream, h *Head) {
 
 func (s *PServ) Close() {
 	s.close()
-}
-
-// Setup a bare-bones TLS config for the server
-func generateTLSConfig() *tls.Config {
-	key, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		panic(err)
-	}
-	template := x509.Certificate{SerialNumber: big.NewInt(1)}
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
-	if err != nil {
-		panic(err)
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-
-	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		panic(err)
-	}
-	return &tls.Config{
-		Certificates: []tls.Certificate{tlsCert},
-		NextProtos:   []string{QUIC_PROTOCOL},
-	}
 }
