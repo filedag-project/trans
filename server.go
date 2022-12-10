@@ -66,7 +66,7 @@ func (s *PServ) serv() {
 		default:
 			stream, err := conn.AcceptStream(s.ctx)
 			if err != nil {
-				panic(fmt.Errorf("failed when accept connection: %s", err))
+				logger.Warnf("failed when accept connection: %s", err)
 			}
 			go s.handleConnection(stream)
 		}
