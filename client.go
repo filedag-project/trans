@@ -524,11 +524,10 @@ func (tc *TransClient) Close() {
 }
 
 func (tc *TransClient) pingTarget() {
-	fmt.Println("+++++++++++++++")
 	go func(tc *TransClient) {
 		var conn quic.Stream
 		var err error
-		ticker := time.NewTicker(time.Millisecond * 10)
+		ticker := time.NewTicker(time.Second * 5)
 		defer func() {
 			if conn != nil {
 				conn.Close()
@@ -541,7 +540,6 @@ func (tc *TransClient) pingTarget() {
 			case <-tc.closeChan:
 				return
 			case <-ticker.C:
-				fmt.Println("ticking.... ", time.Now())
 				if conn == nil {
 					conn, err = tc.qc.AcceptStream(tc.ctx)
 					if err != nil {
@@ -554,7 +552,6 @@ func (tc *TransClient) pingTarget() {
 						logger.Infof("ping - set target state: %d", tc.targetState)
 					}
 				}
-				fmt.Println("====================")
 				if err := tc.ping(conn); err != nil {
 					conn.Close()
 					conn = nil
