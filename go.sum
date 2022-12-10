@@ -33,6 +33,8 @@ github.com/filedag-project/mutcask v0.1.0 h1:f6ukoz/qLdSSdYUEHSkZ4U709JZQJwk9xVU
 github.com/filedag-project/mutcask v0.1.0/go.mod h1:3u2WoPnKh6rSXZS7qxIRq260mf2go5U9y6I94YXq5N8=
 github.com/filedag-project/mutcask v0.2.1 h1:RlNGe6bz0gqRJ6I/C9xdnfbygZ5SZTfokVcEj1iWk38=
 github.com/filedag-project/mutcask v0.2.1/go.mod h1:h2aTp/c4IH7v4bhXUCju3as62f+EzGS9F0gNa4+ZjdI=
+github.com/filedag-project/mutcask v0.2.2 h1:ufNxDmK8Biy3DawhQpdge3mFfNk9etlb2QcN4vQwwAQ=
+github.com/filedag-project/mutcask v0.2.2/go.mod h1:368t8XSzBBfzOp8v+A5VJ/I1zU+s9Lcf+fRXGTy27cM=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 github.com/fxamacker/cbor/v2 v2.4.0 h1:ri0ArlOR+5XunOP8CRUowT0pSJOwhW098ZCUyskZD88=
 github.com/fxamacker/cbor/v2 v2.4.0/go.mod h1:TA1xS00nchWmaBnEIxPSE5oHLuJBAVvqrtAnWBwBCVo=
