@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -529,12 +528,15 @@ func (tc *TransClient) Close() {
 
 func (tc *TransClient) pingTarget() {
 	go func(tc *TransClient) {
-		var conn net.Conn
-		var dialer = net.Dialer{
-			Timeout: time.Second * 10,
+		var dialer quic.Connection
+		var conn quic.Stream
+
+		tlsConf := &tls.Config{
+			InsecureSkipVerify: true,
+			NextProtos:         []string{QUIC_PROTOCOL},
 		}
 		var err error
-		ticker := time.NewTicker(time.Second * 3)
+		ticker := time.NewTicker(time.Second * 5)
 		defer func() {
 			if conn != nil {
 				conn.Close()
@@ -547,20 +549,29 @@ func (tc *TransClient) pingTarget() {
 			case <-tc.closeChan:
 				return
 			case <-ticker.C:
-				if conn == nil {
-					if conn, err = dialer.Dial("tcp", tc.target); err != nil {
+				var dialFailed bool
+				if dialer == nil {
+					if dialer, err = quic.DialAddr(tc.target, tlsConf, nil); err != nil {
+						dialFailed = true
+					} else {
+						if conn, err = dialer.AcceptStream(tc.ctx); err != nil {
+							dialFailed = true
+						} else {
+							atomic.CompareAndSwapInt32(&tc.targetState, targetDown, targetActive)
+							logger.Infof("ping - set target state: %d", tc.targetState)
+						}
+					}
+					if dialFailed {
 						atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
 						logger.Errorf("ping - failed to dail up: %s", tc.target)
 						logger.Infof("ping - set target state: %d", tc.targetState)
 						continue
-					} else {
-						atomic.CompareAndSwapInt32(&tc.targetState, targetDown, targetActive)
-						logger.Infof("ping - set target state: %d", tc.targetState)
 					}
 				}
 				if err := tc.ping(conn); err != nil {
 					conn.Close()
 					conn = nil
+					dialer = nil
 				}
 			}
 		}
@@ -568,7 +579,7 @@ func (tc *TransClient) pingTarget() {
 	}(tc)
 }
 
-func (tc *TransClient) ping(conn net.Conn) (err error) {
+func (tc *TransClient) ping(conn quic.Stream) (err error) {
 	logger.Infof("ping start")
 
 	msg := &Msg{
