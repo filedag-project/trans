@@ -51,10 +51,6 @@ func (s *PServ) serv() {
 	if err != nil {
 		panic(err)
 	}
-	conn, err := l.Accept(s.ctx)
-	if err != nil {
-		panic(err)
-	}
 
 	defer l.Close()
 	for {
@@ -64,11 +60,30 @@ func (s *PServ) serv() {
 		case <-s.closeChan:
 			return
 		default:
-			stream, err := conn.AcceptStream(s.ctx)
+			conn, err := l.Accept(s.ctx)
 			if err != nil {
 				logger.Warnf("failed when accept connection: %s", err)
+				continue
 			}
-			go s.handleConnection(stream)
+			go func() {
+				for {
+					select {
+					case <-s.ctx.Done():
+						return
+					case <-s.closeChan:
+						return
+					default:
+						stream, err := conn.AcceptStream(s.ctx)
+						if err != nil {
+							logger.Warnf("failed when accept stream: %s", err)
+							continue
+						}
+						go s.handleConnection(stream)
+					}
+				}
+
+			}()
+
 		}
 	}
 }

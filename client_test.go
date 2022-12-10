@@ -36,7 +36,7 @@ func TestTransClient(t *testing.T) {
 	// wait for server setup listener
 	time.Sleep(time.Millisecond * 100)
 	defer serv.Close()
-	client := NewTransClient(ctx, "127.0.0.1"+addr, 1)
+	client := NewTransClient(ctx, "127.0.0.1"+addr, 10)
 	defer client.Close()
 
 	// test put data
