@@ -100,11 +100,4 @@ func TestTransClient(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-
-	for _, d := range tdata {
-		_, err := client.Get(d.k)
-		if err != ErrNotFound {
-			t.Fatal(err)
-		}
-	}
 }
