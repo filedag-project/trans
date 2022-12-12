@@ -2,20 +2,47 @@ package trans
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/lucas-clemente/quic-go"
+	logging "github.com/ipfs/go-log/v2"
 )
 
-var _ Client = (*QuicClient)(nil)
+var logger = logging.Logger("piecestore-trans")
 
-type QuicClient struct {
+const defaultConnNum = 1
+const defaultConnForAllKeysChan = 3
+
+const (
+	targetActive = iota
+	targetDown
+)
+
+type Client interface {
+	Size(string) (int, error)
+	Has(string) (bool, error)
+	Delete(string) error
+	Get(string) ([]byte, error)
+	Put(string, []byte) error
+	AllKeysChan(string) (chan string, error)
+	Close()
+	TargetActive() bool
+	CheckSum(string) (string, error)
+}
+
+type payload struct {
+	in  *Msg
+	out chan *Reply
+}
+
+var _ Client = (*TransClient)(nil)
+
+type TransClient struct {
 	ctx         context.Context
 	target      string
 	targetState int32
@@ -24,29 +51,20 @@ type QuicClient struct {
 	allKeysChan chan *payload
 	closeChan   chan struct{}
 	close       func()
-	qc          quic.Connection
 }
 
-func NewQuicClient(ctx context.Context, target string, connNum int) *QuicClient {
+func NewTransClient(ctx context.Context, target string, connNum int) *TransClient {
 	if connNum <= 0 {
 		connNum = defaultConnNum
 	}
-	tlsConf := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{QUIC_PROTOCOL},
-	}
-	dialer, err := quic.DialAddr(target, tlsConf, nil)
-	if err != nil {
-		panic(err)
-	}
-	tra := &QuicClient{
+
+	tra := &TransClient{
 		ctx:         ctx,
 		target:      target,
 		connNum:     connNum,
 		payloadChan: make(chan *payload),
 		allKeysChan: make(chan *payload),
 		closeChan:   make(chan struct{}),
-		qc:          dialer,
 	}
 	var once sync.Once
 	tra.close = func() {
@@ -60,10 +78,13 @@ func NewQuicClient(ctx context.Context, target string, connNum int) *QuicClient 
 	return tra
 }
 
-func (tc *QuicClient) initConns() {
+func (tc *TransClient) initConns() {
 	for i := 0; i < tc.connNum; i++ {
-		go func(tc *QuicClient) {
-			var conn quic.Stream
+		go func(tc *TransClient) {
+			var conn net.Conn
+			var dialer = net.Dialer{
+				Timeout: time.Second * 10,
+			}
 			var err error
 			var idle time.Time = time.Now()
 			var maxIdle = time.Second * 15
@@ -89,7 +110,7 @@ func (tc *QuicClient) initConns() {
 					}
 
 					if conn == nil {
-						conn, err = tc.qc.OpenStreamSync(tc.ctx)
+						conn, err = dialer.Dial("tcp", tc.target)
 						if err != nil {
 							logger.Errorf("failed to open stream: %s", err)
 							continue
@@ -106,7 +127,7 @@ func (tc *QuicClient) initConns() {
 					case act_checksum:
 						fallthrough
 					case act_put:
-						err = tc.send(&conn, p, time.Since(idle) > maxIdle)
+						err = tc.send(&conn, p, dialer, time.Since(idle) > maxIdle)
 						if err != nil {
 							if conn != nil {
 								conn.Close()
@@ -129,12 +150,11 @@ func (tc *QuicClient) initConns() {
 	}
 }
 
-func (tc *QuicClient) servAllKeysChan() {
+func (tc *TransClient) servAllKeysChan() {
 	for i := 0; i < defaultConnForAllKeysChan; i++ {
-		go func(tc *QuicClient) {
-			tlsConf := &tls.Config{
-				InsecureSkipVerify: true,
-				NextProtos:         []string{QUIC_PROTOCOL},
+		go func(tc *TransClient) {
+			var dialer = net.Dialer{
+				Timeout: time.Second * 10,
 			}
 			for {
 				select {
@@ -152,19 +172,9 @@ func (tc *QuicClient) servAllKeysChan() {
 							}
 							return
 						}
-						dialer, err := quic.DialAddr(tc.target, tlsConf, nil)
+						conn, err := dialer.Dial("tcp", tc.target)
 						if err != nil {
 							logger.Errorf("failed to dail up: %s, %s", tc.target, err)
-							p.out <- &Reply{
-								Code: rep_failed,
-								Body: []byte(err.Error()),
-							}
-							return
-						}
-
-						conn, err := dialer.OpenStreamSync(tc.ctx)
-						if err != nil {
-							logger.Errorf("failed to open stream: %s", err)
 							p.out <- &Reply{
 								Code: rep_failed,
 								Body: []byte(err.Error()),
@@ -191,7 +201,7 @@ func (tc *QuicClient) servAllKeysChan() {
 	}
 }
 
-func (tc *QuicClient) Size(key string) (int, error) {
+func (tc *TransClient) Size(key string) (int, error) {
 	msg := &Msg{
 		Act: act_size,
 		Key: key,
@@ -218,14 +228,14 @@ func (tc *QuicClient) Size(key string) (int, error) {
 	return int(size), nil
 }
 
-func (tc *QuicClient) Has(key string) (bool, error) {
+func (tc *TransClient) Has(key string) (bool, error) {
 	if _, err := tc.Size(key); err != nil {
 		return false, nil
 	}
 	return true, nil
 }
 
-func (tc *QuicClient) Delete(key string) error {
+func (tc *TransClient) Delete(key string) error {
 	msg := &Msg{
 		Act: act_del,
 		Key: key,
@@ -244,7 +254,7 @@ func (tc *QuicClient) Delete(key string) error {
 	return nil
 }
 
-func (tc *QuicClient) Get(key string) ([]byte, error) {
+func (tc *TransClient) Get(key string) ([]byte, error) {
 	msg := &Msg{
 		Act: act_get,
 		Key: key,
@@ -274,7 +284,7 @@ func (tc *QuicClient) Get(key string) ([]byte, error) {
 	return v, nil
 }
 
-func (tc *QuicClient) CheckSum(key string) (string, error) {
+func (tc *TransClient) CheckSum(key string) (string, error) {
 	msg := &Msg{
 		Act: act_checksum,
 		Key: key,
@@ -298,7 +308,7 @@ func (tc *QuicClient) CheckSum(key string) (string, error) {
 	return string(v), nil
 }
 
-func (tc *QuicClient) Put(key string, value []byte) error {
+func (tc *TransClient) Put(key string, value []byte) error {
 	msg := &Msg{
 		Act:   act_put,
 		Key:   key,
@@ -318,9 +328,9 @@ func (tc *QuicClient) Put(key string, value []byte) error {
 	return nil
 }
 
-func (tc *QuicClient) AllKeysChan(startKey string) (chan string, error) {
+func (tc *TransClient) AllKeysChan(startKey string) (chan string, error) {
 	kc := make(chan string)
-	go func(tc *QuicClient, kc chan string) {
+	go func(tc *TransClient, kc chan string) {
 		defer close(kc)
 		msg := &Msg{
 			Act: act_get_keys,
@@ -348,7 +358,7 @@ func (tc *QuicClient) AllKeysChan(startKey string) (chan string, error) {
 	return kc, nil
 }
 
-func (tc *QuicClient) send(connPtr *quic.Stream, p *payload, exceedIdleTime bool) (err error) {
+func (tc *TransClient) send(connPtr *net.Conn, p *payload, dialer net.Dialer, exceedIdleTime bool) (err error) {
 	retried := false
 	conn := *connPtr
 	logger.Infof("send msg: %s: %s, exceedIdleTime: %v", p.in.Act, p.in.Key, exceedIdleTime)
@@ -372,7 +382,7 @@ START_SEND:
 			logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
 			return
 		}
-		newConn, e := tc.qc.OpenStreamSync(tc.ctx)
+		newConn, e := dialer.Dial("tcp", tc.target)
 		if e != nil {
 			logger.Error("failed to dail up: ", e)
 			err = e
@@ -395,7 +405,7 @@ START_SEND:
 			return
 		}
 		// idle too long, maybe we need have to try more time and create a new conn
-		newConn, e := tc.qc.OpenStreamSync(tc.ctx)
+		newConn, e := dialer.Dial("tcp", tc.target)
 		if e != nil {
 			logger.Error("failed to dail up: ", e)
 			err = e
@@ -426,7 +436,7 @@ START_SEND:
 	return
 }
 
-func (tc *QuicClient) sendGetKeys(conn quic.Stream, p *payload) {
+func (tc *TransClient) sendGetKeys(conn net.Conn, p *payload) {
 	var err error
 	logger.Infof("send msg: %s: %s", p.in.Act, p.in.Key)
 	defer func() {
@@ -490,13 +500,16 @@ func (tc *QuicClient) sendGetKeys(conn quic.Stream, p *payload) {
 	}
 }
 
-func (tc *QuicClient) Close() {
+func (tc *TransClient) Close() {
 	tc.close()
 }
 
-func (tc *QuicClient) pingTarget() {
-	go func(tc *QuicClient) {
-		var conn quic.Stream
+func (tc *TransClient) pingTarget() {
+	go func(tc *TransClient) {
+		var conn net.Conn
+		var dialer = net.Dialer{
+			Timeout: time.Second * 10,
+		}
 		var err error
 		ticker := time.NewTicker(time.Second * 5)
 		defer func() {
@@ -512,8 +525,7 @@ func (tc *QuicClient) pingTarget() {
 				return
 			case <-ticker.C:
 				if conn == nil {
-					conn, err = tc.qc.OpenStreamSync(tc.ctx)
-					if err != nil {
+					if conn, err = dialer.Dial("tcp", tc.target); err != nil {
 						atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
 						logger.Errorf("ping - failed to dail up: %s", tc.target)
 						logger.Infof("ping - set target state: %d", tc.targetState)
@@ -533,7 +545,7 @@ func (tc *QuicClient) pingTarget() {
 	}(tc)
 }
 
-func (tc *QuicClient) ping(conn quic.Stream) (err error) {
+func (tc *TransClient) ping(conn net.Conn) (err error) {
 	logger.Infof("ping start")
 
 	msg := &Msg{
@@ -581,6 +593,6 @@ func (tc *QuicClient) ping(conn quic.Stream) (err error) {
 	return nil
 }
 
-func (tc *QuicClient) TargetActive() bool {
+func (tc *TransClient) TargetActive() bool {
 	return tc.targetState == targetActive
 }

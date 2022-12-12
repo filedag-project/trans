@@ -3,6 +3,8 @@ package trans
 import (
 	"encoding/binary"
 	"net"
+
+	"github.com/lucas-clemente/quic-go"
 )
 
 const action_size = 1
@@ -187,6 +189,22 @@ func ReplyHeadFrom(buf []byte) (h *ReplyHead, err error) {
 }
 
 func (r *Reply) Dump(w net.Conn) (n int, err error) {
+	blen := len(r.Body)
+	retref := vBuf.Get().(*[]byte)
+	(*buffer)(retref).size(rephead_size + blen)
+	defer vBuf.Put(retref)
+	ret := *retref
+	// ret := make([]byte, rephead_size+blen)
+	// action
+	ret[0] = byte(r.Code)
+	// body size
+	binary.LittleEndian.PutUint32(ret[repcode_size:rephead_size], uint32(blen))
+	// write value
+	copy(ret[rephead_size:], r.Body)
+	return w.Write(ret)
+}
+
+func (r *Reply) DumpQuic(w quic.Stream) (n int, err error) {
 	blen := len(r.Body)
 	retref := vBuf.Get().(*[]byte)
 	(*buffer)(retref).size(rephead_size + blen)
