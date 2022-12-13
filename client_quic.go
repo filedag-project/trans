@@ -516,23 +516,33 @@ func (tc *QuicClient) pingTarget() {
 				return
 			case <-ticker.C:
 				if conn == nil {
+					var retrySuccess bool
 					conn, err = tc.qc.OpenStreamSync(tc.ctx)
 					if err != nil {
 						// maybe need to try to reconnect
 						dialer, err := quic.DialAddr(tc.target, tlsConf, nil)
 						if err != nil {
-							atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
-							logger.Errorf("ping - failed to dail up: %s", tc.target)
-							logger.Infof("ping - set target state: %d", tc.targetState)
-							continue
+							retrySuccess = false
 						} else {
-							tc.qc = dialer
-							atomic.CompareAndSwapInt32(&tc.targetState, targetDown, targetActive)
-							logger.Infof("ping - set target state: %d", tc.targetState)
+							conn, err = dialer.OpenStreamSync(tc.ctx)
+							if err != nil {
+								retrySuccess = false
+							} else {
+								tc.qc = dialer
+								retrySuccess = true
+							}
 						}
 					} else {
+						retrySuccess = true
+					}
+					if retrySuccess {
 						atomic.CompareAndSwapInt32(&tc.targetState, targetDown, targetActive)
 						logger.Infof("ping - set target state: %d", tc.targetState)
+					} else {
+						atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
+						logger.Errorf("ping - failed to dail up: %s", tc.target)
+						logger.Infof("ping - set target state: %d", tc.targetState)
+						continue
 					}
 				}
 				if err := tc.ping(conn); err != nil {
