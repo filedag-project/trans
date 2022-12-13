@@ -32,16 +32,7 @@ func NewQuicClient(ctx context.Context, target string, connNum int) *QuicClient 
 	if connNum <= 0 {
 		connNum = defaultConnNum
 	}
-	tlsConf := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{QUIC_PROTOCOL},
-	}
-	var dialer quic.Connection
-	var err error
-	dialer, err = quic.DialAddr(target, tlsConf, nil)
-	if err != nil {
-		logger.Warn(err)
-	}
+
 	tra := &QuicClient{
 		ctx:         ctx,
 		target:      target,
@@ -50,7 +41,6 @@ func NewQuicClient(ctx context.Context, target string, connNum int) *QuicClient 
 		payloadChan: make(chan *payload),
 		allKeysChan: make(chan *payload),
 		closeChan:   make(chan struct{}),
-		qc:          dialer,
 	}
 	var once sync.Once
 	tra.close = func() {
@@ -58,10 +48,37 @@ func NewQuicClient(ctx context.Context, target string, connNum int) *QuicClient 
 			close(tra.closeChan)
 		})
 	}
+	tra.dial()
 	tra.pingTarget()
 	tra.initConns()
 	tra.servAllKeysChan()
 	return tra
+}
+
+func (tc *QuicClient) newStream() (conn quic.Stream, err error) {
+	if tc.qc == nil {
+		return nil, fmt.Errorf("lost connection with target")
+	}
+	conn, err = tc.qc.OpenStreamSync(tc.ctx)
+	return
+}
+
+func (tc *QuicClient) dial() (dialer quic.Connection, err error) {
+	tlsConf := &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{QUIC_PROTOCOL},
+	}
+	dialer, err = quic.DialAddr(tc.target, tlsConf, nil)
+	if err != nil {
+		logger.Warn(err)
+		tc.setConnStatus(false)
+		return
+	}
+	tc.Lock()
+	tc.qc = dialer
+	tc.Unlock()
+	tc.setConnStatus(true)
+	return
 }
 
 func (tc *QuicClient) initConns() {
@@ -83,7 +100,7 @@ func (tc *QuicClient) initConns() {
 				case <-tc.closeChan:
 					return
 				case p := <-tc.payloadChan:
-					if tc.qc == nil || tc.targetState == targetDown { // do nothing but report error when target is down
+					if tc.targetState == targetDown { // do nothing but report error when target is down
 						logger.Errorf("failed to dail up: %s", tc.target)
 						p.out <- &Reply{
 							Code: rep_failed,
@@ -93,7 +110,7 @@ func (tc *QuicClient) initConns() {
 					}
 
 					if conn == nil {
-						conn, err = tc.qc.OpenStreamSync(tc.ctx)
+						conn, err = tc.newStream()
 						if err != nil {
 							logger.Errorf("failed to open stream: %s", err)
 							p.out <- &Reply{
@@ -140,10 +157,6 @@ func (tc *QuicClient) initConns() {
 func (tc *QuicClient) servAllKeysChan() {
 	for i := 0; i < defaultConnForAllKeysChan; i++ {
 		go func(tc *QuicClient) {
-			tlsConf := &tls.Config{
-				InsecureSkipVerify: true,
-				NextProtos:         []string{QUIC_PROTOCOL},
-			}
 			for {
 				select {
 				case <-tc.ctx.Done():
@@ -160,17 +173,8 @@ func (tc *QuicClient) servAllKeysChan() {
 							}
 							return
 						}
-						dialer, err := quic.DialAddr(tc.target, tlsConf, nil)
-						if err != nil {
-							logger.Errorf("failed to dail up: %s, %s", tc.target, err)
-							p.out <- &Reply{
-								Code: rep_failed,
-								Body: []byte(err.Error()),
-							}
-							return
-						}
 
-						conn, err := dialer.OpenStreamSync(tc.ctx)
+						conn, err := tc.newStream()
 						if err != nil {
 							logger.Errorf("failed to open stream: %s", err)
 							p.out <- &Reply{
@@ -380,7 +384,7 @@ START_SEND:
 			logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
 			return
 		}
-		newConn, e := tc.qc.OpenStreamSync(tc.ctx)
+		newConn, e := tc.newStream()
 		if e != nil {
 			logger.Error("failed to dail up: ", e)
 			err = e
@@ -403,7 +407,7 @@ START_SEND:
 			return
 		}
 		// idle too long, maybe we need have to try more time and create a new conn
-		newConn, e := tc.qc.OpenStreamSync(tc.ctx)
+		newConn, e := tc.newStream()
 		if e != nil {
 			logger.Error("failed to dail up: ", e)
 			err = e
@@ -504,10 +508,6 @@ func (tc *QuicClient) Close() {
 
 func (tc *QuicClient) pingTarget() {
 	go func(tc *QuicClient) {
-		tlsConf := &tls.Config{
-			InsecureSkipVerify: true,
-			NextProtos:         []string{QUIC_PROTOCOL},
-		}
 		var conn quic.Stream
 		var err error
 		ticker := time.NewTicker(time.Second * 2)
@@ -526,23 +526,18 @@ func (tc *QuicClient) pingTarget() {
 				if conn == nil {
 					if tc.qc == nil {
 						// try to reconnect
-						dialer, err := quic.DialAddr(tc.target, tlsConf, nil)
-						if err == nil {
-							tc.Lock()
-							tc.qc = dialer
-							tc.Unlock()
-						}
+						tc.dial()
 					}
 					if tc.qc == nil {
 						continue
 					}
 					conn, err = tc.qc.OpenStreamSync(tc.ctx)
-					if err == nil {
-						tc.setConnStatus(true)
-					} else { // maybe lost connect with server, so set tc.qc to nil
+					if err != nil {
+						// maybe lost connect with server, so set tc.qc to nil
 						tc.Lock()
 						tc.qc = nil
 						tc.Unlock()
+						tc.setConnStatus(false)
 						continue
 					}
 				}
