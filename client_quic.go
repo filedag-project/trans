@@ -580,7 +580,7 @@ func (tc *QuicClient) ping(conn quic.Stream) (err error) {
 	}
 	// buf := make([]byte, rephead_size)
 	buf := shortBuf.Get().(*[]byte)
-	(*buffer)(buf).size(repbody_size)
+	(*buffer)(buf).size(rephead_size)
 	defer shortBuf.Put(buf)
 	conn.SetReadDeadline(time.Now().Add(ReadHeaderTimeout))
 	_, err = io.ReadFull(conn, *buf)
