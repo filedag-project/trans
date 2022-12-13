@@ -16,6 +16,7 @@ import (
 var _ Client = (*QuicClient)(nil)
 
 type QuicClient struct {
+	sync.Mutex
 	ctx         context.Context
 	target      string
 	targetState int32
@@ -35,13 +36,16 @@ func NewQuicClient(ctx context.Context, target string, connNum int) *QuicClient 
 		InsecureSkipVerify: true,
 		NextProtos:         []string{QUIC_PROTOCOL},
 	}
-	dialer, err := quic.DialAddr(target, tlsConf, nil)
+	var dialer quic.Connection
+	var err error
+	dialer, err = quic.DialAddr(target, tlsConf, nil)
 	if err != nil {
-		panic(err)
+		logger.Warn(err)
 	}
 	tra := &QuicClient{
 		ctx:         ctx,
 		target:      target,
+		targetState: targetActive,
 		connNum:     connNum,
 		payloadChan: make(chan *payload),
 		allKeysChan: make(chan *payload),
@@ -79,7 +83,7 @@ func (tc *QuicClient) initConns() {
 				case <-tc.closeChan:
 					return
 				case p := <-tc.payloadChan:
-					if tc.targetState == targetDown { // do nothing but report error when target is down
+					if tc.qc == nil || tc.targetState == targetDown { // do nothing but report error when target is down
 						logger.Errorf("failed to dail up: %s", tc.target)
 						p.out <- &Reply{
 							Code: rep_failed,
@@ -92,6 +96,10 @@ func (tc *QuicClient) initConns() {
 						conn, err = tc.qc.OpenStreamSync(tc.ctx)
 						if err != nil {
 							logger.Errorf("failed to open stream: %s", err)
+							p.out <- &Reply{
+								Code: rep_failed,
+								Body: []byte(fmt.Sprintf("failed connect to target: %s", tc.target)),
+							}
 							continue
 						}
 						logger.Info("conn created!")
@@ -502,7 +510,7 @@ func (tc *QuicClient) pingTarget() {
 		}
 		var conn quic.Stream
 		var err error
-		ticker := time.NewTicker(time.Second * 5)
+		ticker := time.NewTicker(time.Second * 2)
 		defer func() {
 			if conn != nil {
 				conn.Close()
@@ -516,43 +524,48 @@ func (tc *QuicClient) pingTarget() {
 				return
 			case <-ticker.C:
 				if conn == nil {
-					var retrySuccess bool
-					conn, err = tc.qc.OpenStreamSync(tc.ctx)
-					if err != nil {
-						// maybe need to try to reconnect
+					if tc.qc == nil {
+						// try to reconnect
 						dialer, err := quic.DialAddr(tc.target, tlsConf, nil)
-						if err != nil {
-							retrySuccess = false
-						} else {
-							conn, err = dialer.OpenStreamSync(tc.ctx)
-							if err != nil {
-								retrySuccess = false
-							} else {
-								tc.qc = dialer
-								retrySuccess = true
-							}
+						if err == nil {
+							tc.Lock()
+							tc.qc = dialer
+							tc.Unlock()
 						}
-					} else {
-						retrySuccess = true
 					}
-					if retrySuccess {
-						atomic.CompareAndSwapInt32(&tc.targetState, targetDown, targetActive)
-						logger.Infof("ping - set target state: %d", tc.targetState)
-					} else {
-						atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
-						logger.Errorf("ping - failed to dail up: %s", tc.target)
-						logger.Infof("ping - set target state: %d", tc.targetState)
+					if tc.qc == nil {
+						continue
+					}
+					conn, err = tc.qc.OpenStreamSync(tc.ctx)
+					if err == nil {
+						tc.setConnStatus(true)
+					} else { // maybe lost connect with server, so set tc.qc to nil
+						tc.Lock()
+						tc.qc = nil
+						tc.Unlock()
 						continue
 					}
 				}
 				if err := tc.ping(conn); err != nil {
 					conn.Close()
 					conn = nil
+					tc.setConnStatus(false)
 				}
 			}
 		}
 
 	}(tc)
+}
+
+func (tc *QuicClient) setConnStatus(up bool) {
+	if up {
+		atomic.CompareAndSwapInt32(&tc.targetState, targetDown, targetActive)
+		logger.Infof("ping - set target state: %d", tc.targetState)
+	} else {
+		atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
+		logger.Errorf("ping - failed to dail up: %s", tc.target)
+		logger.Infof("ping - set target state: %d", tc.targetState)
+	}
 }
 
 func (tc *QuicClient) ping(conn quic.Stream) (err error) {

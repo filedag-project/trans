@@ -61,6 +61,7 @@ func NewTransClient(ctx context.Context, target string, connNum int) *TransClien
 	tra := &TransClient{
 		ctx:         ctx,
 		target:      target,
+		targetState: targetActive,
 		connNum:     connNum,
 		payloadChan: make(chan *payload),
 		allKeysChan: make(chan *payload),
@@ -113,6 +114,10 @@ func (tc *TransClient) initConns() {
 						conn, err = dialer.Dial("tcp", tc.target)
 						if err != nil {
 							logger.Errorf("failed to open stream: %s", err)
+							p.out <- &Reply{
+								Code: rep_failed,
+								Body: []byte(fmt.Sprintf("failed to connect to target: %s", tc.target)),
+							}
 							continue
 						}
 						logger.Info("conn created!")
@@ -511,7 +516,7 @@ func (tc *TransClient) pingTarget() {
 			Timeout: time.Second * 10,
 		}
 		var err error
-		ticker := time.NewTicker(time.Second * 5)
+		ticker := time.NewTicker(time.Second * 2)
 		defer func() {
 			if conn != nil {
 				conn.Close()
@@ -525,24 +530,34 @@ func (tc *TransClient) pingTarget() {
 				return
 			case <-ticker.C:
 				if conn == nil {
-					if conn, err = dialer.Dial("tcp", tc.target); err != nil {
-						atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
-						logger.Errorf("ping - failed to dail up: %s", tc.target)
-						logger.Infof("ping - set target state: %d", tc.targetState)
+					conn, err = dialer.Dial("tcp", tc.target)
+					if err != nil {
+						tc.setConnStatus(false)
 						continue
 					} else {
-						atomic.CompareAndSwapInt32(&tc.targetState, targetDown, targetActive)
-						logger.Infof("ping - set target state: %d", tc.targetState)
+						tc.setConnStatus(true)
 					}
 				}
 				if err := tc.ping(conn); err != nil {
 					conn.Close()
 					conn = nil
+					tc.setConnStatus(false)
 				}
 			}
 		}
 
 	}(tc)
+}
+
+func (tc *TransClient) setConnStatus(up bool) {
+	if up {
+		atomic.CompareAndSwapInt32(&tc.targetState, targetDown, targetActive)
+		logger.Infof("ping - set target state: %d", tc.targetState)
+	} else {
+		atomic.CompareAndSwapInt32(&tc.targetState, targetActive, targetDown)
+		logger.Errorf("ping - failed to dail up: %s", tc.target)
+		logger.Infof("ping - set target state: %d", tc.targetState)
+	}
 }
 
 func (tc *TransClient) ping(conn net.Conn) (err error) {
