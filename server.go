@@ -13,13 +13,13 @@ import (
 
 type PServ struct {
 	ctx       context.Context
-	kv        kv.KVDB
+	kv        kv.KVStore
 	addr      string // net listen address
 	closeChan chan struct{}
 	close     func()
 }
 
-func NewPServ(ctx context.Context, addr string, db kv.KVDB) (*PServ, error) {
+func NewPServ(ctx context.Context, addr string, db kv.KVStore) (*PServ, error) {
 	srv := &PServ{
 		ctx:       ctx,
 		kv:        db,
@@ -191,7 +191,7 @@ func (s *PServ) checksum(conn net.Conn, h *Head) error {
 		reply.Body = []byte(err.Error())
 	} else {
 		reply.Code = rep_success
-		reply.Body = []byte(v)
+		reply.Body = []byte(fmt.Sprintf("%d", v))
 	}
 
 	conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))

@@ -1,6 +1,7 @@
 package trans
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	kv "github.com/filedag-project/mutcask"
 	logging "github.com/ipfs/go-log/v2"
 )
 
@@ -24,15 +26,12 @@ const (
 )
 
 type Client interface {
-	Size(string) (int, error)
-	Has(string) (bool, error)
-	Delete(string) error
-	Get(string) ([]byte, error)
-	Put(string, []byte) error
-	AllKeysChan(string) (chan string, error)
+	kv.KVBasic
+	kv.KVScanner
+	kv.KVAdvance
+
 	Close()
 	TargetActive() bool
-	CheckSum(string) (string, error)
 }
 
 type payload struct {
@@ -75,7 +74,6 @@ func NewTransClient(ctx context.Context, target string, connNum int) *TransClien
 	}
 	tra.pingTarget()
 	tra.initConns()
-	tra.servAllKeysChan()
 	return tra
 }
 
@@ -155,58 +153,7 @@ func (tc *TransClient) initConns() {
 	}
 }
 
-func (tc *TransClient) servAllKeysChan() {
-	for i := 0; i < defaultConnForAllKeysChan; i++ {
-		go func(tc *TransClient) {
-			var dialer = net.Dialer{
-				Timeout: time.Second * 10,
-			}
-			for {
-				select {
-				case <-tc.ctx.Done():
-					return
-				case <-tc.closeChan:
-					return
-				case p := <-tc.allKeysChan:
-					func() {
-						if tc.targetState == targetDown { // do nothing but report error when target is down
-							logger.Errorf("failed to dail up: %s", tc.target)
-							p.out <- &Reply{
-								Code: rep_failed,
-								Body: []byte(fmt.Sprintf("target: %s is down", tc.target)),
-							}
-							return
-						}
-						conn, err := dialer.Dial("tcp", tc.target)
-						if err != nil {
-							logger.Errorf("failed to dail up: %s, %s", tc.target, err)
-							p.out <- &Reply{
-								Code: rep_failed,
-								Body: []byte(err.Error()),
-							}
-							return
-						}
-						defer conn.Close()
-
-						switch p.in.Act {
-						case act_get_keys:
-							tc.sendGetKeys(conn, p)
-						default:
-							logger.Warnf("allKeysChan does not support %s yet", p.in.Act)
-							p.out <- &Reply{
-								Code: rep_failed,
-								Body: []byte("unsupported action"),
-							}
-						}
-					}()
-				}
-			}
-
-		}(tc)
-	}
-}
-
-func (tc *TransClient) Size(key string) (int, error) {
+func (tc *TransClient) Size(key []byte) (int, error) {
 	msg := &Msg{
 		Act: act_size,
 		Key: key,
@@ -233,14 +180,14 @@ func (tc *TransClient) Size(key string) (int, error) {
 	return int(size), nil
 }
 
-func (tc *TransClient) Has(key string) (bool, error) {
+func (tc *TransClient) Has(key []byte) (bool, error) {
 	if _, err := tc.Size(key); err != nil {
 		return false, nil
 	}
 	return true, nil
 }
 
-func (tc *TransClient) Delete(key string) error {
+func (tc *TransClient) Delete(key []byte) error {
 	msg := &Msg{
 		Act: act_del,
 		Key: key,
@@ -259,7 +206,7 @@ func (tc *TransClient) Delete(key string) error {
 	return nil
 }
 
-func (tc *TransClient) Get(key string) ([]byte, error) {
+func (tc *TransClient) Get(key []byte) ([]byte, error) {
 	msg := &Msg{
 		Act: act_get,
 		Key: key,
@@ -281,7 +228,7 @@ func (tc *TransClient) Get(key string) ([]byte, error) {
 		return nil, err
 	}
 	defer vBuf.Put(&msg.Value)
-	if msg.Key != key {
+	if !bytes.Equal(msg.Key, key) {
 		return nil, fmt.Errorf("reply key not match, expect: %s, got: %s", key, msg.Key)
 	}
 	v := make([]byte, len(msg.Value))
@@ -289,7 +236,7 @@ func (tc *TransClient) Get(key string) ([]byte, error) {
 	return v, nil
 }
 
-func (tc *TransClient) CheckSum(key string) (string, error) {
+func (tc *TransClient) CheckSum(key []byte) (uint32, error) {
 	msg := &Msg{
 		Act: act_checksum,
 		Key: key,
@@ -302,18 +249,22 @@ func (tc *TransClient) CheckSum(key string) (string, error) {
 	reply := <-ch
 	defer vBuf.Put(&reply.Body)
 	if reply.Code == rep_failed {
-		return "", fmt.Errorf("%s", reply.Body)
+		return 0, fmt.Errorf("%s", reply.Body)
 	}
 	if reply.Code == rep_nofound {
-		return "", ErrNotFound
+		return 0, ErrNotFound
 	}
 
 	v := make([]byte, len(reply.Body))
 	copy(v, reply.Body)
-	return string(v), nil
+	checkSum, err := strconv.ParseUint(string(v), 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(checkSum), nil
 }
 
-func (tc *TransClient) Put(key string, value []byte) error {
+func (tc *TransClient) Put(key []byte, value []byte) error {
 	msg := &Msg{
 		Act:   act_put,
 		Key:   key,
@@ -333,34 +284,16 @@ func (tc *TransClient) Put(key string, value []byte) error {
 	return nil
 }
 
-func (tc *TransClient) AllKeysChan(startKey string) (chan string, error) {
-	kc := make(chan string)
-	go func(tc *TransClient, kc chan string) {
-		defer close(kc)
-		msg := &Msg{
-			Act: act_get_keys,
-			Key: startKey,
-		}
-		ch := make(chan *Reply)
-		tc.allKeysChan <- &payload{
-			in:  msg,
-			out: ch,
-		}
+func (tc *TransClient) AllKeysChan(context.Context) (chan string, error) {
+	return nil, kv.ErrNotImpl
+}
 
-		for reply := range ch {
-			if reply.Code == rep_failed {
-				if string(reply.Body) != "EOF" {
-					logger.Errorf("%s", reply.Body)
-				}
-				return
-			}
-			k := make([]byte, len(reply.Body))
-			copy(k, reply.Body)
-			shortBuf.Put(&reply.Body)
-			kc <- string(k)
-		}
-	}(tc, kc)
-	return kc, nil
+func (tc *TransClient) Scan(prefix []byte, max int) ([]kv.KVPair, error) {
+	return nil, kv.ErrNotImpl
+}
+
+func (tc *TransClient) ScanKeys(prefix []byte, max int) ([][]byte, error) {
+	return nil, kv.ErrNotImpl
 }
 
 func (tc *TransClient) send(connPtr *net.Conn, p *payload, dialer net.Dialer, exceedIdleTime bool) (err error) {
@@ -439,70 +372,6 @@ START_SEND:
 	rep.From(h, buf2)
 	p.out <- rep
 	return
-}
-
-func (tc *TransClient) sendGetKeys(conn net.Conn, p *payload) {
-	var err error
-	logger.Infof("send msg: %s: %s", p.in.Act, p.in.Key)
-	defer func() {
-		if err != nil {
-			p.out <- &Reply{
-				Code: rep_failed,
-				Body: []byte(err.Error()),
-			}
-		}
-		close(p.out)
-	}()
-	msg := p.in
-	conn.SetWriteDeadline(time.Now().Add(WriteHeaderTimeout))
-	msgb := msg.Encode()
-	defer vBuf.Put(&msgb)
-	_, err = conn.Write(msgb)
-	if err != nil {
-		logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
-		return
-	}
-	for {
-		select {
-		case <-tc.ctx.Done():
-			err = tc.ctx.Err()
-			return
-		case <-tc.closeChan:
-			err = fmt.Errorf("client has been closed")
-		default:
-			if err := func() error {
-				//buf := make([]byte, rephead_size)
-				buf := shortBuf.Get().(*[]byte)
-				defer shortBuf.Put(buf)
-				(*buffer)(buf).size(rephead_size)
-				conn.SetReadDeadline(time.Now().Add(ReadHeaderTimeout))
-				_, err = io.ReadFull(conn, *buf)
-				if err != nil {
-					if err != io.EOF {
-						logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
-					}
-					return err
-				}
-				h, err := ReplyHeadFrom(*buf)
-				if err != nil {
-					return err
-				}
-				//buf = make([]byte, h.BodySize)
-				(*buffer)(buf).size(int(h.BodySize))
-				conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
-				_, err = io.ReadFull(conn, *buf)
-				if err != nil {
-					return err
-				}
-				rep := &Reply{}
-				rep.From(h, *buf)
-				p.out <- rep
-				return nil
-			}(); err != nil {
-				return
-			}
-		}
-	}
 }
 
 func (tc *TransClient) Close() {

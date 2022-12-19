@@ -3,7 +3,7 @@ module github.com/filedag-project/trans
 go 1.17
 
 require (
-	github.com/filedag-project/mutcask v0.2.2
+	github.com/filedag-project/mutcask v0.2.5-0.20221219060825-215024c4ef2b
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-cid v0.1.0
 	github.com/ipfs/go-ipfs-blockstore v1.0.2
@@ -19,7 +19,6 @@ require (
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
-	github.com/google/btree v1.1.2 // indirect
 	github.com/google/pprof v0.0.0-20210407192527-94a9f03dee38 // indirect
 	github.com/google/uuid v1.1.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
@@ -44,6 +43,7 @@ require (
 	github.com/multiformats/go-multibase v0.0.3 // indirect
 	github.com/multiformats/go-multihash v0.0.15 // indirect
 	github.com/multiformats/go-varint v0.0.6 // indirect
+	github.com/onsi/ginkgo v1.16.4 // indirect
 	github.com/onsi/ginkgo/v2 v2.2.0 // indirect
 	github.com/opentracing/opentracing-go v1.0.2 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect

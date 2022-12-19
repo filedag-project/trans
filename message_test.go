@@ -6,12 +6,12 @@ import (
 )
 
 var msglist = []*Msg{
-	{act_get, "piecestore_message_01", nil},
-	{act_put, "piecestore_message_01", []byte("data_for_message_01")},
-	{act_del, "piecestore_message_02", nil},
-	{act_get_keys, "", nil},
-	{act_conn_close, "", nil},
-	{act_conn_keep, "", nil},
+	{act_get, []byte("piecestore_message_01"), nil},
+	{act_put, []byte("piecestore_message_01"), []byte("data_for_message_01")},
+	{act_del, []byte("piecestore_message_02"), nil},
+	{act_get_keys, nil, nil},
+	{act_conn_close, nil, nil},
+	{act_conn_keep, nil, nil},
 }
 
 func TestMsg(t *testing.T) {
@@ -26,7 +26,7 @@ func TestMsg(t *testing.T) {
 		}
 		msg2 := &Msg{}
 		msg2.From(h, bs[header_size:])
-		if msg2.Key != msg.Key {
+		if !bytes.Equal(msg2.Key, msg.Key) {
 			t.Fatal("key not match ", msg2.Key, msg.Key)
 		}
 		if !bytes.Equal(msg2.Value, msg.Value) {
@@ -38,7 +38,7 @@ func TestMsg(t *testing.T) {
 		if msg2.Act != msg.Act {
 			t.Fatal("action not match ", msg2.Act, msg.Act)
 		}
-		if msg2.Key != msg.Key {
+		if !bytes.Equal(msg2.Key, msg.Key) {
 			t.Fatal("key not match ", msg2.Key, msg.Key)
 		}
 		if !bytes.Equal(msg2.Value, msg.Value) {

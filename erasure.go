@@ -2,12 +2,13 @@ package trans
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 
+	kv "github.com/filedag-project/mutcask"
 	"github.com/klauspost/reedsolomon"
 )
 
@@ -44,7 +45,7 @@ func NewErasureClient(chunkClients []Client, dataShards, parShards int, mode str
 	}, nil
 }
 
-func (ec *ErasureClient) Size(key string) (n int, err error) {
+func (ec *ErasureClient) Size(key []byte) (n int, err error) {
 	shardsNum := len(ec.chunkClients)
 	ch := make(chan ecres)
 	for i, client := range ec.chunkClients {
@@ -79,7 +80,7 @@ func (ec *ErasureClient) Size(key string) (n int, err error) {
 	return shardSize * len(ec.chunkClients), nil
 }
 
-func (ec *ErasureClient) Has(key string) (has bool, err error) {
+func (ec *ErasureClient) Has(key []byte) (has bool, err error) {
 	_, err = ec.Size(key)
 	if err != nil {
 		if err == ErrNotFound {
@@ -90,23 +91,23 @@ func (ec *ErasureClient) Has(key string) (has bool, err error) {
 	return true, nil
 }
 
-func (ec *ErasureClient) Delete(key string) (err error) {
+func (ec *ErasureClient) Delete(key []byte) (err error) {
 	// not support right now
 	return nil
 }
 
-func (ec *ErasureClient) CheckSum(key string) (string, error) {
-	return "", fmt.Errorf("CheckSum method not supported")
+func (ec *ErasureClient) CheckSum(key []byte) (uint32, error) {
+	return 0, kv.ErrNotImpl
 }
 
-func (ec *ErasureClient) Get(key string) (value []byte, err error) {
+func (ec *ErasureClient) Get(key []byte) (value []byte, err error) {
 	if ec.mode == RecoverMode {
 		return ec.recoverAfterGet(key)
 	}
 	return ec.get(key)
 }
 
-func (ec *ErasureClient) get(key string) (value []byte, err error) {
+func (ec *ErasureClient) get(key []byte) (value []byte, err error) {
 	shardsNum := len(ec.chunkClients)
 	dataShardsNum := len(ec.dataClients)
 	parShardsNum := len(ec.parClients)
@@ -188,7 +189,7 @@ func (ec *ErasureClient) get(key string) (value []byte, err error) {
 	return
 }
 
-func (ec *ErasureClient) recoverAfterGet(key string) (value []byte, err error) {
+func (ec *ErasureClient) recoverAfterGet(key []byte) (value []byte, err error) {
 	shardsNum := len(ec.chunkClients)
 	ch := make(chan ecres)
 	nilDataCount := 0
@@ -248,7 +249,7 @@ func (ec *ErasureClient) recoverAfterGet(key string) (value []byte, err error) {
 		var wg sync.WaitGroup
 		for _, idx := range recoverIndex {
 			wg.Add(1)
-			go func(idx int, client Client, key string, value []byte) {
+			go func(idx int, client Client, key, value []byte) {
 				defer func() {
 					wg.Done()
 				}()
@@ -262,7 +263,7 @@ func (ec *ErasureClient) recoverAfterGet(key string) (value []byte, err error) {
 	return
 }
 
-func (ec *ErasureClient) Put(key string, value []byte) (err error) {
+func (ec *ErasureClient) Put(key, value []byte) (err error) {
 	shards, err := ErasueEncode(wrapValue(value), ec.dataShards, ec.parShards)
 	if err != nil {
 		return err
@@ -297,10 +298,16 @@ func (ec *ErasureClient) Put(key string, value []byte) (err error) {
 	return
 }
 
-func (ec *ErasureClient) AllKeysChan(startKey string) (chan string, error) {
-	activeClients := ec.activeClients()
-	idx := rand.Intn(len(activeClients))
-	return activeClients[idx].AllKeysChan(startKey)
+func (ec *ErasureClient) AllKeysChan(context.Context) (chan string, error) {
+	return nil, kv.ErrNotImpl
+}
+
+func (ec *ErasureClient) Scan([]byte, int) ([]kv.KVPair, error) {
+	return nil, kv.ErrNotImpl
+}
+
+func (ec *ErasureClient) ScanKeys([]byte, int) ([][]byte, error) {
+	return nil, kv.ErrNotImpl
 }
 
 func (ec *ErasureClient) Close() {

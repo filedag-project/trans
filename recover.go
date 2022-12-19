@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"strings"
 )
@@ -54,17 +53,17 @@ func NewRecoverClient(chunkClients []*ClientWithInfo, dataShards, parShards int)
 	return rc, nil
 }
 
-func (ec *RecoverClient) Recover(startKey string) (err error) {
-	idx := rand.Intn(len(ec.activeClients))
-	keyChan, err := ec.activeClients[idx].Client.AllKeysChan(startKey)
-	if err != nil {
-		return fmt.Errorf("RecoverClient failed to call AllKeysChan, idx: %d, err: %s", idx, err)
-	}
-	for key := range keyChan {
-		ec.RecoverKey(key)
-	}
-	return
-}
+// func (ec *RecoverClient) Recover(startKey string) (err error) {
+// 	idx := rand.Intn(len(ec.activeClients))
+// 	keyChan, err := ec.activeClients[idx].Client.AllKeysChan(startKey)
+// 	if err != nil {
+// 		return fmt.Errorf("RecoverClient failed to call AllKeysChan, idx: %d, err: %s", idx, err)
+// 	}
+// 	for key := range keyChan {
+// 		ec.RecoverKey(key)
+// 	}
+// 	return
+// }
 
 func (ec *RecoverClient) Close() {
 	for _, client := range ec.chunkClients {
@@ -72,25 +71,25 @@ func (ec *RecoverClient) Close() {
 	}
 }
 
-func (ec *RecoverClient) ExportAllKeys(startKey, pathToAllKeys string) error {
-	f, err := os.OpenFile(pathToAllKeys, os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+// func (ec *RecoverClient) ExportAllKeys(startKey, pathToAllKeys string) error {
+// 	f, err := os.OpenFile(pathToAllKeys, os.O_CREATE|os.O_RDWR, 0644)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	defer f.Close()
 
-	idx := rand.Intn(len(ec.activeClients))
-	keyChan, err := ec.activeClients[idx].Client.AllKeysChan(startKey)
-	if err != nil {
-		return fmt.Errorf("RecoverClient failed to call AllKeysChan, idx: %d, err: %s", idx, err)
-	}
-	for key := range keyChan {
-		if _, err = f.WriteString(fmt.Sprintf("%s\n", key)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+// 	idx := rand.Intn(len(ec.activeClients))
+// 	keyChan, err := ec.activeClients[idx].Client.AllKeysChan(startKey)
+// 	if err != nil {
+// 		return fmt.Errorf("RecoverClient failed to call AllKeysChan, idx: %d, err: %s", idx, err)
+// 	}
+// 	for key := range keyChan {
+// 		if _, err = f.WriteString(fmt.Sprintf("%s\n", key)); err != nil {
+// 			return err
+// 		}
+// 	}
+// 	return nil
+// }
 
 func (ec *RecoverClient) RecoverFromFile(startKey, pathToAllKeys string) (err error) {
 	foundStartKey := false
@@ -118,12 +117,12 @@ func (ec *RecoverClient) RecoverFromFile(startKey, pathToAllKeys string) (err er
 			}
 			foundStartKey = true
 		}
-		ec.RecoverKey(key)
+		ec.RecoverKey([]byte(key))
 	}
 	return
 }
 
-func (ec *RecoverClient) RecoverKey(key string) (err error) {
+func (ec *RecoverClient) RecoverKey(key []byte) (err error) {
 	// first to make sure that the key doesn't exist in at least one of the recover clients
 	var needRecover bool
 	for _, recoverClient := range ec.recoverClients {
@@ -216,7 +215,7 @@ func (ec *RecoverClient) RecoverCheck(pathToAllKeys, pathToUnrecoverKeys string)
 		totalNum++
 		var needRecover bool
 		for _, recoverClient := range ec.recoverClients {
-			if has, _ := recoverClient.Client.Has(key); !has {
+			if has, _ := recoverClient.Client.Has([]byte(key)); !has {
 				needRecover = true
 				break
 			}

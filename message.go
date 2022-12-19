@@ -29,7 +29,7 @@ const (
 
 type Msg struct {
 	Act   action
-	Key   string
+	Key   []byte
 	Value []byte
 }
 
@@ -57,7 +57,7 @@ func (m *Msg) Encode() []byte {
 	// value size
 	binary.LittleEndian.PutUint32(ret[action_size+key_size:header_size], uint32(vlen))
 	// write key
-	copy(ret[header_size:header_size+klen], []byte(m.Key))
+	copy(ret[header_size:header_size+klen], m.Key)
 	// write value
 	copy(ret[header_size+klen:], m.Value)
 	return ret
@@ -77,9 +77,8 @@ func (m *Msg) FromBytes(buf []byte) (err error) {
 func (m *Msg) From(h *Head, buf []byte) {
 	m.Act = h.Act
 	// read key
-	kb := make([]byte, h.KSize)
-	copy(kb, buf[:h.KSize])
-	m.Key = string(kb)
+	m.Key = make([]byte, h.KSize)
+	copy(m.Key, buf[:h.KSize])
 	// read value
 	if m.Value == nil {
 		v := vBuf.Get().(*[]byte)
