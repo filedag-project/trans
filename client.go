@@ -18,7 +18,6 @@ import (
 var logger = logging.Logger("piecestore-trans")
 
 const defaultConnNum = 1
-const defaultConnForAllKeysChan = 3
 
 const (
 	targetActive = iota
@@ -47,7 +46,6 @@ type TransClient struct {
 	targetState int32
 	connNum     int
 	payloadChan chan *payload
-	allKeysChan chan *payload
 	closeChan   chan struct{}
 	close       func()
 }
@@ -63,7 +61,6 @@ func NewTransClient(ctx context.Context, target string, connNum int) *TransClien
 		targetState: targetActive,
 		connNum:     connNum,
 		payloadChan: make(chan *payload),
-		allKeysChan: make(chan *payload),
 		closeChan:   make(chan struct{}),
 	}
 	var once sync.Once
@@ -331,12 +328,9 @@ START_SEND:
 		*connPtr = newConn
 		goto START_SEND
 	}
-	//buf := make([]byte, rephead_size)
-	buf := shortBuf.Get().(*[]byte)
-	(*buffer)(buf).size(rephead_size)
-	defer shortBuf.Put(buf)
+	buf := make([]byte, rephead_size)
 	conn.SetReadDeadline(time.Now().Add(ReadHeaderTimeout))
-	_, err = io.ReadFull(conn, *buf)
+	_, err = io.ReadFull(conn, buf)
 	if err != nil {
 		if retried || !exceedIdleTime {
 			logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
@@ -354,7 +348,7 @@ START_SEND:
 		*connPtr = newConn
 		goto START_SEND
 	}
-	h, err := ReplyHeadFrom(*buf)
+	h, err := ReplyHeadFrom(buf)
 	if err != nil {
 		return
 	}
@@ -444,32 +438,28 @@ func (tc *TransClient) ping(conn net.Conn) (err error) {
 		logger.Errorf("client ping write msg failed %s", err)
 		return
 	}
-	// buf := make([]byte, rephead_size)
-	buf := shortBuf.Get().(*[]byte)
-	(*buffer)(buf).size(rephead_size)
-	defer shortBuf.Put(buf)
+	buf := make([]byte, rephead_size)
+
 	conn.SetReadDeadline(time.Now().Add(ReadHeaderTimeout))
-	_, err = io.ReadFull(conn, *buf)
+	_, err = io.ReadFull(conn, buf)
 	if err != nil {
 		logger.Errorf("client ping read head failed %s", err)
 		return
 
 	}
-	h, err := ReplyHeadFrom(*buf)
+	h, err := ReplyHeadFrom(buf)
 	if err != nil {
 		return
 	}
-	buf2 := shortBuf.Get().(*[]byte)
-	(*buffer)(buf2).size(int(h.BodySize))
-	defer shortBuf.Put(buf2)
-	// buf = make([]byte, h.BodySize)
-	// buf2 := &buf
+
+	buf = make([]byte, h.BodySize)
+
 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
-	_, err = io.ReadFull(conn, *buf2)
+	_, err = io.ReadFull(conn, buf)
 	if err != nil {
 		return
 	}
-	if err := msg.FromBytes(*buf2); err == nil {
+	if err := msg.FromBytes(buf); err == nil {
 		logger.Infof("received: %s", msg.Act)
 	}
 	//vBuf.Put(&msg.Value)

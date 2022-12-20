@@ -69,10 +69,9 @@ func (s *PServ) handleConnection(conn net.Conn) {
 		case <-s.closeChan:
 			return
 		default:
-			//buf := make([]byte, header_size)
-			buf := headerBuf.Get().(*[]byte)
+			buf := make([]byte, header_size)
 			conn.SetReadDeadline(time.Now().Add(ReadHeaderTimeout))
-			n, err := io.ReadFull(conn, *buf)
+			n, err := io.ReadFull(conn, buf)
 			if err != nil {
 				if err == io.EOF {
 					logger.Info("handle conn: closed by peer")
@@ -91,12 +90,11 @@ func (s *PServ) handleConnection(conn net.Conn) {
 				logger.Errorf("handle conn: read header, expect %d bytes, got %d", header_size, n)
 				return
 			}
-			h, err := HeadFrom(*buf)
+			h, err := HeadFrom(buf)
 			if err != nil {
 				logger.Errorf("handle conn: failed to deserialize head: %s", err)
 				return
 			}
-			headerBuf.Put(buf)
 			logger.Infof("server receive message, action: %s", h.Act)
 			switch h.Act {
 			case act_conn_close:
