@@ -302,7 +302,7 @@ func (ec *ErasureClient) AllKeysChan(context.Context) (chan string, error) {
 	return nil, kv.ErrNotImpl
 }
 
-func (ec *ErasureClient) Scan([]byte, int) ([]kv.KVPair, error) {
+func (ec *ErasureClient) Scan([]byte, int) ([]kv.Pair, error) {
 	return nil, kv.ErrNotImpl
 }
 

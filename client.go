@@ -126,6 +126,10 @@ func (tc *TransClient) initConns() {
 						fallthrough
 					case act_checksum:
 						fallthrough
+					case act_scan:
+						fallthrough
+					case act_scan_keys:
+						fallthrough
 					case act_put:
 						err = tc.send(&conn, p, dialer, time.Since(idle) > maxIdle)
 						if err != nil {
@@ -162,7 +166,6 @@ func (tc *TransClient) Size(key []byte) (int, error) {
 	}
 	reply := <-ch
 	//logger.Warnf("size: %v", reply.Body)
-	defer vBuf.Put(&reply.Body)
 
 	if reply.Code == rep_failed {
 		return -1, fmt.Errorf("%s", reply.Body)
@@ -195,7 +198,6 @@ func (tc *TransClient) Delete(key []byte) error {
 		out: ch,
 	}
 	reply := <-ch
-	defer vBuf.Put(&reply.Body)
 	if reply.Code == rep_failed {
 		return fmt.Errorf("%s", reply.Body)
 	}
@@ -214,7 +216,6 @@ func (tc *TransClient) Get(key []byte) ([]byte, error) {
 		out: ch,
 	}
 	reply := <-ch
-	defer vBuf.Put(&reply.Body)
 	if reply.Code == rep_failed {
 		return nil, fmt.Errorf("%s", reply.Body)
 	}
@@ -224,7 +225,6 @@ func (tc *TransClient) Get(key []byte) ([]byte, error) {
 	if err := msg.FromBytes(reply.Body); err != nil {
 		return nil, err
 	}
-	defer vBuf.Put(&msg.Value)
 	if !bytes.Equal(msg.Key, key) {
 		return nil, fmt.Errorf("reply key not match, expect: %s, got: %s", key, msg.Key)
 	}
@@ -244,7 +244,6 @@ func (tc *TransClient) CheckSum(key []byte) (uint32, error) {
 		out: ch,
 	}
 	reply := <-ch
-	defer vBuf.Put(&reply.Body)
 	if reply.Code == rep_failed {
 		return 0, fmt.Errorf("%s", reply.Body)
 	}
@@ -274,7 +273,6 @@ func (tc *TransClient) Put(key []byte, value []byte) error {
 	}
 	reply := <-ch
 	//logger.Warnf("put: %v, len: %d, cap: %d", reply.Body, len(reply.Body), cap(reply.Body))
-	defer vBuf.Put(&reply.Body)
 	if reply.Code == rep_failed {
 		return fmt.Errorf("%s", reply.Body)
 	}
@@ -285,12 +283,58 @@ func (tc *TransClient) AllKeysChan(context.Context) (chan string, error) {
 	return nil, kv.ErrNotImpl
 }
 
-func (tc *TransClient) Scan(prefix []byte, max int) ([]kv.KVPair, error) {
-	return nil, kv.ErrNotImpl
+func (tc *TransClient) Scan(prefix []byte, max int) ([]kv.Pair, error) {
+	msg := &Msg{
+		Act:   act_scan,
+		Key:   prefix,
+		Value: i2b(max),
+	}
+	ch := make(chan *Reply)
+	tc.payloadChan <- &payload{
+		in:  msg,
+		out: ch,
+	}
+	reply := <-ch
+	//logger.Warnf("put: %v, len: %d, cap: %d", reply.Body, len(reply.Body), cap(reply.Body))
+	if reply.Code == rep_failed {
+		return nil, fmt.Errorf("%s", reply.Body)
+	}
+	if reply.Body == nil || len(reply.Body) == 0 {
+		return make([]kv.Pair, 0), nil
+	}
+	fmt.Println("&&&&&&&&&&&&&&&")
+	fmt.Println(reply.Body)
+	ps, err := DecodeKVPair(reply.Body)
+	if err != nil {
+		return nil, err
+	}
+	return ps, nil
 }
 
 func (tc *TransClient) ScanKeys(prefix []byte, max int) ([][]byte, error) {
-	return nil, kv.ErrNotImpl
+	msg := &Msg{
+		Act:   act_scan_keys,
+		Key:   prefix,
+		Value: i2b(max),
+	}
+	ch := make(chan *Reply)
+	tc.payloadChan <- &payload{
+		in:  msg,
+		out: ch,
+	}
+	reply := <-ch
+	//logger.Warnf("put: %v, len: %d, cap: %d", reply.Body, len(reply.Body), cap(reply.Body))
+	if reply.Code == rep_failed {
+		return nil, fmt.Errorf("%s", reply.Body)
+	}
+	if reply.Body == nil || len(reply.Body) == 0 {
+		return make([][]byte, 0), nil
+	}
+	ps, err := DecodeKeys(reply.Body)
+	if err != nil {
+		return nil, err
+	}
+	return ps, nil
 }
 
 func (tc *TransClient) send(connPtr *net.Conn, p *payload, dialer net.Dialer, exceedIdleTime bool) (err error) {
@@ -310,7 +354,6 @@ func (tc *TransClient) send(connPtr *net.Conn, p *payload, dialer net.Dialer, ex
 START_SEND:
 	conn.SetWriteDeadline(time.Now().Add(WriteHeaderTimeout))
 	msgb := msg.Encode()
-	defer vBuf.Put(&msgb)
 	_, err = conn.Write(msgb)
 	if err != nil {
 		if retried || !exceedIdleTime {
@@ -352,10 +395,7 @@ START_SEND:
 	if err != nil {
 		return
 	}
-	// buf2 := make([]byte, h.BodySize)
-	buf2ref := vBuf.Get().(*[]byte)
-	(*buffer)(buf2ref).size(int(h.BodySize))
-	buf2 := *buf2ref
+	buf2 := make([]byte, h.BodySize)
 
 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
 	_, err = io.ReadFull(conn, buf2)
@@ -432,7 +472,6 @@ func (tc *TransClient) ping(conn net.Conn) (err error) {
 
 	conn.SetWriteDeadline(time.Now().Add(WriteHeaderTimeout))
 	msgb := msg.Encode()
-	defer vBuf.Put(&msgb)
 	_, err = conn.Write(msgb)
 	if err != nil {
 		logger.Errorf("client ping write msg failed %s", err)

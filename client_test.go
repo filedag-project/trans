@@ -46,6 +46,20 @@ func TestTransClient(t *testing.T) {
 		}
 	}
 
+	// test scan
+	pairs, err := client.Scan([]byte("trans_client_key"), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(pairs)
+
+	// test scan keys
+	keys, err := client.ScanKeys([]byte("trans_client_key"), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(keys)
+
 	// test get data
 	for _, d := range tdata {
 		v, err := client.Get(d.k)
