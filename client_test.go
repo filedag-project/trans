@@ -78,13 +78,13 @@ func TestTransClient(t *testing.T) {
 			t.Fatal("should has key ", d.k)
 		}
 	}
-	kc, err := client.AllKeysChan("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for k := range kc {
-		t.Log(k)
-	}
+	// kc, err := client.AllKeysChan("")
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+	// for k := range kc {
+	// 	t.Log(k)
+	// }
 	// test delete data
 	for _, d := range tdata {
 		err := client.Delete(d.k)

@@ -3,7 +3,7 @@ module github.com/filedag-project/trans
 go 1.17
 
 require (
-	github.com/filedag-project/mutcask v0.2.2
+	github.com/filedag-project/mutcask v0.2.5
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-cid v0.1.0
 	github.com/ipfs/go-ipfs-blockstore v1.0.2

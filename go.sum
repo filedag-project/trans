@@ -31,6 +31,8 @@ github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.m
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
 github.com/filedag-project/mutcask v0.2.2 h1:ufNxDmK8Biy3DawhQpdge3mFfNk9etlb2QcN4vQwwAQ=
 github.com/filedag-project/mutcask v0.2.2/go.mod h1:368t8XSzBBfzOp8v+A5VJ/I1zU+s9Lcf+fRXGTy27cM=
+github.com/filedag-project/mutcask v0.2.5 h1:whnE0TVzL+9Q9ENtZ4DQR2OudUVVSIK9WtdhEFLTP2c=
+github.com/filedag-project/mutcask v0.2.5/go.mod h1:368t8XSzBBfzOp8v+A5VJ/I1zU+s9Lcf+fRXGTy27cM=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 github.com/fxamacker/cbor/v2 v2.4.0 h1:ri0ArlOR+5XunOP8CRUowT0pSJOwhW098ZCUyskZD88=
 github.com/fxamacker/cbor/v2 v2.4.0/go.mod h1:TA1xS00nchWmaBnEIxPSE5oHLuJBAVvqrtAnWBwBCVo=

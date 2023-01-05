@@ -2,6 +2,7 @@ package trans
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -152,10 +153,10 @@ func (s *PServ) handleConnection(conn net.Conn) {
 				}
 				conn.SetDeadline(time.Time{}) // clear time out
 				continue
-			case act_get_keys:
-				conn.SetDeadline(time.Time{}) // clear time out
-				s.allKeys(conn, h)
-				return
+			// case act_get_keys:
+			// 	conn.SetDeadline(time.Time{}) // clear time out
+			// 	s.allKeys(conn, h)
+			// 	return
 			default:
 				logger.Warnf("unknown action: %d\n", h.Act)
 				return
@@ -218,25 +219,34 @@ func (s *PServ) get(conn net.Conn, h *Head) error {
 	msg := &Msg{}
 	msg.From(h, buf)
 	defer vBuf.Put(&msg.Value)
-	v, err := s.kv.Get(msg.Key)
-	reply := &Reply{}
+	var reply *Reply
+	vsize, err := s.kv.Size(msg.Key)
 	if err != nil {
-		reply.Code = rep_failed
+		reply = &Reply{
+			Code: rep_failed,
+		}
 		if err == kv.ErrNotFound {
 			reply.Code = rep_nofound
 		}
 		reply.Body = []byte(err.Error())
-	} else {
-		msg.Value = v
-		reply.Code = rep_success
-		reply.Body = msg.Encode()
-	}
-
-	conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
-	if _, err := reply.Dump(conn); err != nil {
+		conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
+		_, err := reply.Dump(conn)
 		return err
 	}
-	return nil
+	buf2 := make([]byte, rephead_size+header_size+len(msg.Key))
+	buf2[0] = byte(rep_success)
+	binary.LittleEndian.PutUint32(buf2[repcode_size:rephead_size], header_size+uint32(len(msg.Key)+vsize))
+	buf2[rephead_size] = byte(msg.Act)
+	binary.LittleEndian.PutUint32(buf2[rephead_size+action_size:rephead_size+action_size+key_size], uint32(len(msg.Key)))
+	binary.LittleEndian.PutUint32(buf2[rephead_size+action_size+key_size:rephead_size+header_size], uint32(vsize))
+	copy(buf2[rephead_size+header_size:], []byte(msg.Key))
+	conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
+	_, err = conn.Write(buf2)
+	if err != nil {
+		return err
+	}
+	_, err = s.kv.Read(msg.Key, conn)
+	return err
 }
 
 func (s *PServ) put(conn net.Conn, h *Head) error {
@@ -358,57 +368,57 @@ func (s *PServ) pong(conn net.Conn) error {
 	return nil
 }
 
-func (s *PServ) allKeys(conn net.Conn, h *Head) {
-	// buf := make([]byte, h.KSize+h.VSize)
-	bufref := vBuf.Get().(*[]byte)
-	(*buffer)(bufref).size(int(h.KSize + h.VSize))
-	defer vBuf.Put(bufref)
-	buf := *bufref
-	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
-	n, err := io.ReadFull(conn, buf)
-	if err != nil {
-		return
-	}
-	if n != len(buf) {
-		logger.Errorf("read bytes not match expect %d, got %d", len(buf), n)
-		return
-	}
-	// msg := &Msg{}
-	// msg.From(h, buf)
-	// vBuf.Put(buffer(msg.Value))
+// func (s *PServ) allKeys(conn net.Conn, h *Head) {
+// 	// buf := make([]byte, h.KSize+h.VSize)
+// 	bufref := vBuf.Get().(*[]byte)
+// 	(*buffer)(bufref).size(int(h.KSize + h.VSize))
+// 	defer vBuf.Put(bufref)
+// 	buf := *bufref
+// 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
+// 	n, err := io.ReadFull(conn, buf)
+// 	if err != nil {
+// 		return
+// 	}
+// 	if n != len(buf) {
+// 		logger.Errorf("read bytes not match expect %d, got %d", len(buf), n)
+// 		return
+// 	}
+// 	// msg := &Msg{}
+// 	// msg.From(h, buf)
+// 	// vBuf.Put(buffer(msg.Value))
 
-	kc, err := s.kv.AllKeysChan(s.ctx)
-	if err != nil {
-		reply := &Reply{}
-		reply.Code = rep_failed
-		reply.Body = []byte(err.Error())
-		conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
-		if _, err := reply.Dump(conn); err != nil {
-			return
-		}
-		return
-	}
+// 	kc, err := s.kv.AllKeysChan(s.ctx)
+// 	if err != nil {
+// 		reply := &Reply{}
+// 		reply.Code = rep_failed
+// 		reply.Body = []byte(err.Error())
+// 		conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
+// 		if _, err := reply.Dump(conn); err != nil {
+// 			return
+// 		}
+// 		return
+// 	}
 
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-s.closeChan:
-			return
-		case key := <-kc:
-			if key == "" {
-				return
-			}
-			reply := &Reply{}
-			reply.Code = rep_success
-			reply.Body = []byte(key)
-			conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
-			if _, err := reply.Dump(conn); err != nil {
-				return
-			}
-		}
-	}
-}
+// 	for {
+// 		select {
+// 		case <-s.ctx.Done():
+// 			return
+// 		case <-s.closeChan:
+// 			return
+// 		case key := <-kc:
+// 			if key == "" {
+// 				return
+// 			}
+// 			reply := &Reply{}
+// 			reply.Code = rep_success
+// 			reply.Body = []byte(key)
+// 			conn.SetWriteDeadline(time.Now().Add(WriteBodyTimeout))
+// 			if _, err := reply.Dump(conn); err != nil {
+// 				return
+// 			}
+// 		}
+// 	}
+// }
 
 func (s *PServ) Close() {
 	s.close()

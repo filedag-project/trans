@@ -75,7 +75,7 @@ func NewTransClient(ctx context.Context, target string, connNum int) *TransClien
 	}
 	tra.pingTarget()
 	tra.initConns()
-	tra.servAllKeysChan()
+	//tra.servAllKeysChan()
 	return tra
 }
 
@@ -155,56 +155,56 @@ func (tc *TransClient) initConns() {
 	}
 }
 
-func (tc *TransClient) servAllKeysChan() {
-	for i := 0; i < defaultConnForAllKeysChan; i++ {
-		go func(tc *TransClient) {
-			var dialer = net.Dialer{
-				Timeout: time.Second * 10,
-			}
-			for {
-				select {
-				case <-tc.ctx.Done():
-					return
-				case <-tc.closeChan:
-					return
-				case p := <-tc.allKeysChan:
-					func() {
-						if tc.targetState == targetDown { // do nothing but report error when target is down
-							logger.Errorf("failed to dail up: %s", tc.target)
-							p.out <- &Reply{
-								Code: rep_failed,
-								Body: []byte(fmt.Sprintf("target: %s is down", tc.target)),
-							}
-							return
-						}
-						conn, err := dialer.Dial("tcp", tc.target)
-						if err != nil {
-							logger.Errorf("failed to dail up: %s, %s", tc.target, err)
-							p.out <- &Reply{
-								Code: rep_failed,
-								Body: []byte(err.Error()),
-							}
-							return
-						}
-						defer conn.Close()
+// func (tc *TransClient) servAllKeysChan() {
+// 	for i := 0; i < defaultConnForAllKeysChan; i++ {
+// 		go func(tc *TransClient) {
+// 			var dialer = net.Dialer{
+// 				Timeout: time.Second * 10,
+// 			}
+// 			for {
+// 				select {
+// 				case <-tc.ctx.Done():
+// 					return
+// 				case <-tc.closeChan:
+// 					return
+// 				case p := <-tc.allKeysChan:
+// 					func() {
+// 						if tc.targetState == targetDown { // do nothing but report error when target is down
+// 							logger.Errorf("failed to dail up: %s", tc.target)
+// 							p.out <- &Reply{
+// 								Code: rep_failed,
+// 								Body: []byte(fmt.Sprintf("target: %s is down", tc.target)),
+// 							}
+// 							return
+// 						}
+// 						conn, err := dialer.Dial("tcp", tc.target)
+// 						if err != nil {
+// 							logger.Errorf("failed to dail up: %s, %s", tc.target, err)
+// 							p.out <- &Reply{
+// 								Code: rep_failed,
+// 								Body: []byte(err.Error()),
+// 							}
+// 							return
+// 						}
+// 						defer conn.Close()
 
-						switch p.in.Act {
-						case act_get_keys:
-							tc.sendGetKeys(conn, p)
-						default:
-							logger.Warnf("allKeysChan does not support %s yet", p.in.Act)
-							p.out <- &Reply{
-								Code: rep_failed,
-								Body: []byte("unsupported action"),
-							}
-						}
-					}()
-				}
-			}
+// 						switch p.in.Act {
+// 						case act_get_keys:
+// 							tc.sendGetKeys(conn, p)
+// 						default:
+// 							logger.Warnf("allKeysChan does not support %s yet", p.in.Act)
+// 							p.out <- &Reply{
+// 								Code: rep_failed,
+// 								Body: []byte("unsupported action"),
+// 							}
+// 						}
+// 					}()
+// 				}
+// 			}
 
-		}(tc)
-	}
-}
+// 		}(tc)
+// 	}
+// }
 
 func (tc *TransClient) Size(key string) (int, error) {
 	msg := &Msg{
@@ -334,33 +334,34 @@ func (tc *TransClient) Put(key string, value []byte) error {
 }
 
 func (tc *TransClient) AllKeysChan(startKey string) (chan string, error) {
-	kc := make(chan string)
-	go func(tc *TransClient, kc chan string) {
-		defer close(kc)
-		msg := &Msg{
-			Act: act_get_keys,
-			Key: startKey,
-		}
-		ch := make(chan *Reply)
-		tc.allKeysChan <- &payload{
-			in:  msg,
-			out: ch,
-		}
+	return nil, fmt.Errorf("not support all keys chan")
+	// kc := make(chan string)
+	// go func(tc *TransClient, kc chan string) {
+	// 	defer close(kc)
+	// 	msg := &Msg{
+	// 		Act: act_get_keys,
+	// 		Key: startKey,
+	// 	}
+	// 	ch := make(chan *Reply)
+	// 	tc.allKeysChan <- &payload{
+	// 		in:  msg,
+	// 		out: ch,
+	// 	}
 
-		for reply := range ch {
-			if reply.Code == rep_failed {
-				if string(reply.Body) != "EOF" {
-					logger.Errorf("%s", reply.Body)
-				}
-				return
-			}
-			k := make([]byte, len(reply.Body))
-			copy(k, reply.Body)
-			shortBuf.Put(&reply.Body)
-			kc <- string(k)
-		}
-	}(tc, kc)
-	return kc, nil
+	// 	for reply := range ch {
+	// 		if reply.Code == rep_failed {
+	// 			if string(reply.Body) != "EOF" {
+	// 				logger.Errorf("%s", reply.Body)
+	// 			}
+	// 			return
+	// 		}
+	// 		k := make([]byte, len(reply.Body))
+	// 		copy(k, reply.Body)
+	// 		shortBuf.Put(&reply.Body)
+	// 		kc <- string(k)
+	// 	}
+	// }(tc, kc)
+	// return kc, nil
 }
 
 func (tc *TransClient) send(connPtr *net.Conn, p *payload, dialer net.Dialer, exceedIdleTime bool) (err error) {
