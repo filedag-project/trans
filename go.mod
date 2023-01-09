@@ -6,7 +6,7 @@ require (
 	github.com/filedag-project/mutcask v0.2.2
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-cid v0.1.0
-	github.com/ipfs/go-ipfs-blockstore v1.0.2
+	github.com/ipfs/go-ipfs-blockstore v1.2.0
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/klauspost/reedsolomon v1.9.16
 	github.com/lucas-clemente/quic-go v0.31.1
@@ -24,13 +24,14 @@ require (
 	github.com/google/uuid v1.1.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect
-	github.com/ipfs/go-datastore v0.4.2 // indirect
+	github.com/ipfs/go-datastore v0.5.0 // indirect
 	github.com/ipfs/go-fs-lock v0.0.7 // indirect
-	github.com/ipfs/go-ipfs-ds-help v1.0.0 // indirect
+	github.com/ipfs/go-ipfs-ds-help v1.1.0 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
+	github.com/ipfs/go-ipld-format v0.3.0 // indirect
 	github.com/ipfs/go-log v0.0.1 // indirect
 	github.com/ipfs/go-metrics-interface v0.0.1 // indirect
-	github.com/jbenet/goprocess v0.0.0-20160826012719-b497e2f366b8 // indirect
+	github.com/jbenet/goprocess v0.1.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.6 // indirect
 	github.com/marten-seemann/qtls-go1-18 v0.1.3 // indirect
 	github.com/marten-seemann/qtls-go1-19 v0.1.1 // indirect

@@ -8,6 +8,7 @@ import (
 
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-datastore"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"golang.org/x/xerrors"
 )
@@ -21,11 +22,11 @@ type blostore struct {
 
 var _ blockstore.Blockstore = (*blostore)(nil)
 
-func (bs *blostore) DeleteBlock(cid cid.Cid) error {
+func (bs *blostore) DeleteBlock(ctx context.Context, cid cid.Cid) error {
 	return bs.kv.Delete(cid.String())
 }
 
-func (bs *blostore) Has(cid cid.Cid) (bool, error) {
+func (bs *blostore) Has(ctx context.Context, cid cid.Cid) (bool, error) {
 	_, err := bs.kv.Size(cid.String())
 	if err != nil {
 		if err == ErrNotFound {
@@ -37,11 +38,11 @@ func (bs *blostore) Has(cid cid.Cid) (bool, error) {
 	return true, nil
 }
 
-func (bs *blostore) Get(cid cid.Cid) (blocks.Block, error) {
+func (bs *blostore) Get(ctx context.Context, cid cid.Cid) (blocks.Block, error) {
 	data, err := bs.kv.Get(cid.String())
 	if err != nil {
 		if err == ErrNotFound {
-			return nil, blockstore.ErrNotFound
+			return nil, datastore.ErrNotFound
 		}
 		return nil, err
 	}
@@ -53,19 +54,19 @@ func (bs *blostore) Get(cid cid.Cid) (blocks.Block, error) {
 	return b, err
 }
 
-func (bs *blostore) GetSize(cid cid.Cid) (int, error) {
+func (bs *blostore) GetSize(ctx context.Context, cid cid.Cid) (int, error) {
 	n, err := bs.kv.Size(cid.String())
 	if err != nil && err == ErrNotFound {
-		return -1, blockstore.ErrNotFound
+		return -1, datastore.ErrNotFound
 	}
 	return n, err
 }
 
-func (bs *blostore) Put(blo blocks.Block) error {
+func (bs *blostore) Put(ctx context.Context, blo blocks.Block) error {
 	return bs.kv.Put(blo.Cid().String(), blo.RawData())
 }
 
-func (bs *blostore) PutMany(blos []blocks.Block) error {
+func (bs *blostore) PutMany(ctx context.Context, blos []blocks.Block) error {
 	var errlist []string
 	var wg sync.WaitGroup
 	batchChan := make(chan struct{}, bs.batch)
