@@ -226,6 +226,9 @@ func (tc *TransClient) Size(key string) (int, error) {
 	if reply.Code == rep_nofound {
 		return -1, ErrNotFound
 	}
+	if reply.Code == rep_timeout {
+		return -1, ErrTimeout
+	}
 	size, err := strconv.ParseInt(string(reply.Body), 10, 32)
 	if err != nil {
 		return -1, fmt.Errorf("failed to parse body into size: %s, %s", reply.Body, err)
@@ -255,6 +258,9 @@ func (tc *TransClient) Delete(key string) error {
 	if reply.Code == rep_failed {
 		return fmt.Errorf("%s", reply.Body)
 	}
+	if reply.Code == rep_timeout {
+		return ErrTimeout
+	}
 
 	return nil
 }
@@ -276,6 +282,9 @@ func (tc *TransClient) Get(key string) ([]byte, error) {
 	}
 	if reply.Code == rep_nofound {
 		return nil, ErrNotFound
+	}
+	if reply.Code == rep_timeout {
+		return nil, ErrTimeout
 	}
 	if err := msg.FromBytes(reply.Body); err != nil {
 		return nil, err
@@ -307,6 +316,9 @@ func (tc *TransClient) CheckSum(key string) (string, error) {
 	if reply.Code == rep_nofound {
 		return "", ErrNotFound
 	}
+	if reply.Code == rep_timeout {
+		return "", ErrTimeout
+	}
 
 	v := make([]byte, len(reply.Body))
 	copy(v, reply.Body)
@@ -329,6 +341,9 @@ func (tc *TransClient) Put(key string, value []byte) error {
 	defer vBuf.Put(&reply.Body)
 	if reply.Code == rep_failed {
 		return fmt.Errorf("%s", reply.Body)
+	}
+	if reply.Code == rep_timeout {
+		return ErrTimeout
 	}
 	return nil
 }
@@ -369,8 +384,12 @@ func (tc *TransClient) send(connPtr *net.Conn, p *payload, dialer net.Dialer, ex
 	logger.Infof("send msg: %s: %s, exceedIdleTime: %v", p.in.Act, p.in.Key, exceedIdleTime)
 	defer func() {
 		if err != nil {
+			code := rep_failed
+			if e, ok := err.(net.Error); ok && e.Timeout() {
+				code = rep_timeout
+			}
 			p.out <- &Reply{
-				Code: rep_failed,
+				Code: code,
 				Body: []byte(err.Error()),
 			}
 		}

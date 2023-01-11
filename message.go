@@ -141,6 +141,7 @@ const (
 	rep_success repcode = iota
 	rep_failed
 	rep_nofound
+	rep_timeout
 )
 
 type Reply struct {
