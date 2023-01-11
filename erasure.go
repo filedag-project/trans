@@ -119,9 +119,17 @@ func (ec *ErasureClient) get(key string) (value []byte, err error) {
 			res := ecres{
 				i: idx,
 			}
-			v, err := client.Get(key)
-			if err != nil {
-				res.e = err
+			if v, err := client.Get(key); err != nil {
+				if err == ErrTimeout {
+					// try one more time
+					if v, err := client.Get(key); err != nil {
+						res.e = err
+					} else {
+						res.v = v
+					}
+				} else {
+					res.e = err
+				}
 			} else {
 				res.v = v
 			}
@@ -274,9 +282,15 @@ func (ec *ErasureClient) Put(key string, value []byte) (err error) {
 			res := ecres{
 				i: idx,
 			}
-			err := client.Put(key, v)
-			if err != nil {
-				res.e = err
+			if err := client.Put(key, v); err != nil {
+				if err == ErrTimeout {
+					// try one more time
+					if err := client.Put(key, v); err != nil {
+						res.e = err
+					}
+				} else {
+					res.e = err
+				}
 			}
 			ch <- res
 		}(i, client, ch, shards[i])
