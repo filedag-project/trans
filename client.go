@@ -218,7 +218,7 @@ func (tc *TransClient) Size(key string) (int, error) {
 	}
 	reply := <-ch
 	//logger.Warnf("size: %v", reply.Body)
-	defer vBuf.Put(&reply.Body)
+	// defer vBuf.Put(&reply.Body)
 
 	if reply.Code == rep_failed {
 		return -1, fmt.Errorf("%s", reply.Body)
@@ -254,7 +254,7 @@ func (tc *TransClient) Delete(key string) error {
 		out: ch,
 	}
 	reply := <-ch
-	defer vBuf.Put(&reply.Body)
+	// defer vBuf.Put(&reply.Body)
 	if reply.Code == rep_failed {
 		return fmt.Errorf("%s", reply.Body)
 	}
@@ -276,7 +276,7 @@ func (tc *TransClient) Get(key string) ([]byte, error) {
 		out: ch,
 	}
 	reply := <-ch
-	defer vBuf.Put(&reply.Body)
+	// defer vBuf.Put(&reply.Body)
 	if reply.Code == rep_failed {
 		return nil, fmt.Errorf("%s", reply.Body)
 	}
@@ -289,7 +289,7 @@ func (tc *TransClient) Get(key string) ([]byte, error) {
 	if err := msg.FromBytes(reply.Body); err != nil {
 		return nil, err
 	}
-	defer vBuf.Put(&msg.Value)
+	// defer vBuf.Put(&msg.Value)
 	if msg.Key != key {
 		return nil, fmt.Errorf("reply key not match, expect: %s, got: %s", key, msg.Key)
 	}
@@ -309,7 +309,7 @@ func (tc *TransClient) CheckSum(key string) (string, error) {
 		out: ch,
 	}
 	reply := <-ch
-	defer vBuf.Put(&reply.Body)
+	// defer vBuf.Put(&reply.Body)
 	if reply.Code == rep_failed {
 		return "", fmt.Errorf("%s", reply.Body)
 	}
@@ -338,7 +338,7 @@ func (tc *TransClient) Put(key string, value []byte) error {
 	}
 	reply := <-ch
 	//logger.Warnf("put: %v, len: %d, cap: %d", reply.Body, len(reply.Body), cap(reply.Body))
-	defer vBuf.Put(&reply.Body)
+	// defer vBuf.Put(&reply.Body)
 	if reply.Code == rep_failed {
 		return fmt.Errorf("%s", reply.Body)
 	}
@@ -371,7 +371,7 @@ func (tc *TransClient) AllKeysChan(startKey string) (chan string, error) {
 			}
 			k := make([]byte, len(reply.Body))
 			copy(k, reply.Body)
-			shortBuf.Put(&reply.Body)
+			// shortBuf.Put(&reply.Body)
 			kc <- string(k)
 		}
 	}(tc, kc)
@@ -399,7 +399,7 @@ func (tc *TransClient) send(connPtr *net.Conn, p *payload, dialer net.Dialer, ex
 START_SEND:
 	conn.SetWriteDeadline(time.Now().Add(WriteHeaderTimeout))
 	msgb := msg.Encode()
-	defer vBuf.Put(&msgb)
+	// defer vBuf.Put(&msgb)
 	_, err = conn.Write(msgb)
 	if err != nil {
 		if retried || !exceedIdleTime {
@@ -417,12 +417,12 @@ START_SEND:
 		*connPtr = newConn
 		goto START_SEND
 	}
-	//buf := make([]byte, rephead_size)
-	buf := shortBuf.Get().(*[]byte)
-	(*buffer)(buf).size(rephead_size)
-	defer shortBuf.Put(buf)
+	buf := make([]byte, rephead_size)
+	// buf := shortBuf.Get().(*[]byte)
+	// (*buffer)(buf).size(rephead_size)
+	// defer shortBuf.Put(buf)
 	conn.SetReadDeadline(time.Now().Add(ReadHeaderTimeout))
-	_, err = io.ReadFull(conn, *buf)
+	_, err = io.ReadFull(conn, buf)
 	if err != nil {
 		if retried || !exceedIdleTime {
 			logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
@@ -440,14 +440,14 @@ START_SEND:
 		*connPtr = newConn
 		goto START_SEND
 	}
-	h, err := ReplyHeadFrom(*buf)
+	h, err := ReplyHeadFrom(buf)
 	if err != nil {
 		return
 	}
-	// buf2 := make([]byte, h.BodySize)
-	buf2ref := vBuf.Get().(*[]byte)
-	(*buffer)(buf2ref).size(int(h.BodySize))
-	buf2 := *buf2ref
+	buf2 := make([]byte, h.BodySize)
+	// buf2ref := vBuf.Get().(*[]byte)
+	// (*buffer)(buf2ref).size(int(h.BodySize))
+	// buf2 := *buf2ref
 
 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
 	_, err = io.ReadFull(conn, buf2)
@@ -475,7 +475,7 @@ func (tc *TransClient) sendGetKeys(conn net.Conn, p *payload) {
 	msg := p.in
 	conn.SetWriteDeadline(time.Now().Add(WriteHeaderTimeout))
 	msgb := msg.Encode()
-	defer vBuf.Put(&msgb)
+	// defer vBuf.Put(&msgb)
 	_, err = conn.Write(msgb)
 	if err != nil {
 		logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
@@ -490,31 +490,31 @@ func (tc *TransClient) sendGetKeys(conn net.Conn, p *payload) {
 			err = fmt.Errorf("client has been closed")
 		default:
 			if err := func() error {
-				//buf := make([]byte, rephead_size)
-				buf := shortBuf.Get().(*[]byte)
-				defer shortBuf.Put(buf)
-				(*buffer)(buf).size(rephead_size)
+				buf := make([]byte, rephead_size)
+				// buf := shortBuf.Get().(*[]byte)
+				// defer shortBuf.Put(buf)
+				// (*buffer)(buf).size(rephead_size)
 				conn.SetReadDeadline(time.Now().Add(ReadHeaderTimeout))
-				_, err = io.ReadFull(conn, *buf)
+				_, err = io.ReadFull(conn, buf)
 				if err != nil {
 					if err != io.EOF {
 						logger.Errorf("client %s: %s failed %s", p.in.Act, p.in.Key, err)
 					}
 					return err
 				}
-				h, err := ReplyHeadFrom(*buf)
+				h, err := ReplyHeadFrom(buf)
 				if err != nil {
 					return err
 				}
-				//buf = make([]byte, h.BodySize)
-				(*buffer)(buf).size(int(h.BodySize))
+				buf = make([]byte, h.BodySize)
+				// (*buffer)(buf).size(int(h.BodySize))
 				conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
-				_, err = io.ReadFull(conn, *buf)
+				_, err = io.ReadFull(conn, buf)
 				if err != nil {
 					return err
 				}
 				rep := &Reply{}
-				rep.From(h, *buf)
+				rep.From(h, buf)
 				p.out <- rep
 				return nil
 			}(); err != nil {
@@ -588,38 +588,39 @@ func (tc *TransClient) ping(conn net.Conn) (err error) {
 
 	conn.SetWriteDeadline(time.Now().Add(WriteHeaderTimeout))
 	msgb := msg.Encode()
-	defer vBuf.Put(&msgb)
+	// defer vBuf.Put(&msgb)
 	_, err = conn.Write(msgb)
 	if err != nil {
 		logger.Errorf("client ping write msg failed %s", err)
 		return
 	}
-	// buf := make([]byte, rephead_size)
-	buf := shortBuf.Get().(*[]byte)
-	(*buffer)(buf).size(rephead_size)
-	defer shortBuf.Put(buf)
+	buf := make([]byte, rephead_size)
+	// buf := shortBuf.Get().(*[]byte)
+	// (*buffer)(buf).size(rephead_size)
+	// defer shortBuf.Put(buf)
 	conn.SetReadDeadline(time.Now().Add(ReadHeaderTimeout))
-	_, err = io.ReadFull(conn, *buf)
+	_, err = io.ReadFull(conn, buf)
 	if err != nil {
 		logger.Errorf("client ping read head failed %s", err)
 		return
 
 	}
-	h, err := ReplyHeadFrom(*buf)
+	h, err := ReplyHeadFrom(buf)
 	if err != nil {
 		return
 	}
-	buf2 := shortBuf.Get().(*[]byte)
-	(*buffer)(buf2).size(int(h.BodySize))
-	defer shortBuf.Put(buf2)
+	// buf2 := shortBuf.Get().(*[]byte)
+	// (*buffer)(buf2).size(int(h.BodySize))
+	// defer shortBuf.Put(buf2)
 	// buf = make([]byte, h.BodySize)
 	// buf2 := &buf
+	buf2 := make([]byte, h.BodySize)
 	conn.SetReadDeadline(time.Now().Add(ReadBodyTimeout))
-	_, err = io.ReadFull(conn, *buf2)
+	_, err = io.ReadFull(conn, buf2)
 	if err != nil {
 		return
 	}
-	if err := msg.FromBytes(*buf2); err == nil {
+	if err := msg.FromBytes(buf2); err == nil {
 		logger.Infof("received: %s", msg.Act)
 	}
 	//vBuf.Put(&msg.Value)
