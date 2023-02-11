@@ -6,17 +6,19 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	kv "github.com/filedag-project/mutcask"
 )
 
 type PServ struct {
-	ctx       context.Context
-	kv        kv.KVDB
-	addr      string // net listen address
-	closeChan chan struct{}
-	close     func()
+	ctx        context.Context
+	kv         kv.KVDB
+	addr       string // net listen address
+	closeChan  chan struct{}
+	close      func()
+	actConnNum int64
 }
 
 func NewPServ(ctx context.Context, addr string, db kv.KVDB) (*PServ, error) {
@@ -53,13 +55,19 @@ func (s *PServ) serv() {
 			if err != nil {
 				panic(fmt.Errorf("failed when accept connection: %s", err))
 			}
+			acn := atomic.AddInt64(&s.actConnNum, 1)
+			fmt.Printf("trans: active connection +1, total: %d\n", acn)
 			go s.handleConnection(conn)
 		}
 	}
 }
 
 func (s *PServ) handleConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		conn.Close()
+		acn := atomic.AddInt64(&s.actConnNum, -1)
+		fmt.Printf("trans: active connection -1, total: %d\n", acn)
+	}()
 	retry := 0
 	max_retry := 1
 	for {
