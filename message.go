@@ -46,10 +46,10 @@ type Head struct {
 func (m *Msg) Encode() []byte {
 	klen := len(m.Key)
 	vlen := len(m.Value)
-	// ret := make([]byte, header_size+klen+vlen)
-	retref := vBuf.Get().(*[]byte)
-	(*buffer)(retref).size(header_size + klen + vlen)
-	ret := *retref
+	ret := make([]byte, header_size+klen+vlen)
+	// retref := vBuf.Get().(*[]byte)
+	// (*buffer)(retref).size(header_size + klen + vlen)
+	// ret := *retref
 	// action
 	ret[0] = byte(m.Act)
 	// key size
@@ -82,10 +82,10 @@ func (m *Msg) From(h *Head, buf []byte) {
 	m.Key = string(kb)
 	// read value
 	if m.Value == nil {
-		v := vBuf.Get().(*[]byte)
-		(*buffer)(v).size(int(h.VSize))
-		m.Value = *v
-		// m.Value = make([]byte, h.VSize)
+		// v := vBuf.Get().(*[]byte)
+		// (*buffer)(v).size(int(h.VSize))
+		// m.Value = *v
+		m.Value = make([]byte, h.VSize)
 	}
 	copy(m.Value, buf[h.KSize:])
 }
@@ -191,11 +191,11 @@ func ReplyHeadFrom(buf []byte) (h *ReplyHead, err error) {
 
 func (r *Reply) Dump(w net.Conn) (n int, err error) {
 	blen := len(r.Body)
-	retref := vBuf.Get().(*[]byte)
-	(*buffer)(retref).size(rephead_size + blen)
-	defer vBuf.Put(retref)
-	ret := *retref
-	// ret := make([]byte, rephead_size+blen)
+	// retref := vBuf.Get().(*[]byte)
+	// (*buffer)(retref).size(rephead_size + blen)
+	// defer vBuf.Put(retref)
+	// ret := *retref
+	ret := make([]byte, rephead_size+blen)
 	// action
 	ret[0] = byte(r.Code)
 	// body size
@@ -207,11 +207,11 @@ func (r *Reply) Dump(w net.Conn) (n int, err error) {
 
 func (r *Reply) DumpQuic(w quic.Stream) (n int, err error) {
 	blen := len(r.Body)
-	retref := vBuf.Get().(*[]byte)
-	(*buffer)(retref).size(rephead_size + blen)
-	defer vBuf.Put(retref)
-	ret := *retref
-	// ret := make([]byte, rephead_size+blen)
+	// retref := vBuf.Get().(*[]byte)
+	// (*buffer)(retref).size(rephead_size + blen)
+	// defer vBuf.Put(retref)
+	// ret := *retref
+	ret := make([]byte, rephead_size+blen)
 	// action
 	ret[0] = byte(r.Code)
 	// body size
