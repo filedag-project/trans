@@ -210,6 +210,7 @@ func (s *PServ) checksum(conn net.Conn, h *Head) error {
 }
 
 func (s *PServ) get(conn net.Conn, h *Head) error {
+	start := time.Now()
 	buf := make([]byte, h.KSize+h.VSize)
 	// bufref := vBuf.Get().(*[]byte)
 	// (*buffer)(bufref).size(int(h.KSize + h.VSize))
@@ -244,10 +245,12 @@ func (s *PServ) get(conn net.Conn, h *Head) error {
 	if _, err := reply.Dump(conn); err != nil {
 		return err
 	}
+	fmt.Printf("trans: get %s, size: %d, time elapsed: %fs\n", msg.Key, h.VSize, time.Since(start).Seconds())
 	return nil
 }
 
 func (s *PServ) put(conn net.Conn, h *Head) error {
+	start := time.Now()
 	buf := make([]byte, h.KSize+h.VSize)
 	// bufref := vBuf.Get().(*[]byte)
 	// (*buffer)(bufref).size(int(h.KSize + h.VSize))
@@ -277,6 +280,7 @@ func (s *PServ) put(conn net.Conn, h *Head) error {
 	if _, err := reply.Dump(conn); err != nil {
 		return err
 	}
+	fmt.Printf("trans: put %s, size: %d, time elapsed: %fs\n", msg.Key, h.VSize, time.Since(start).Seconds())
 	return nil
 }
 
