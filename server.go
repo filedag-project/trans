@@ -4,21 +4,20 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	kv "github.com/filedag-project/mutcask"
 )
 
 type PServ struct {
-	ctx        context.Context
-	kv         kv.KVDB
-	addr       string // net listen address
-	closeChan  chan struct{}
-	close      func()
-	actConnNum int64
+	ctx       context.Context
+	kv        kv.KVDB
+	addr      string // net listen address
+	closeChan chan struct{}
+	close     func()
 }
 
 func NewPServ(ctx context.Context, addr string, db kv.KVDB) (*PServ, error) {
@@ -55,8 +54,6 @@ func (s *PServ) serv() {
 			if err != nil {
 				panic(fmt.Errorf("failed when accept connection: %s", err))
 			}
-			acn := atomic.AddInt64(&s.actConnNum, 1)
-			fmt.Printf("trans: active connection +1, total: %d\n", acn)
 			go s.handleConnection(conn)
 		}
 	}
@@ -65,8 +62,6 @@ func (s *PServ) serv() {
 func (s *PServ) handleConnection(conn net.Conn) {
 	defer func() {
 		conn.Close()
-		acn := atomic.AddInt64(&s.actConnNum, -1)
-		fmt.Printf("trans: active connection -1, total: %d\n", acn)
 	}()
 	retry := 0
 	max_retry := 1
@@ -245,7 +240,9 @@ func (s *PServ) get(conn net.Conn, h *Head) error {
 	if _, err := reply.Dump(conn); err != nil {
 		return err
 	}
-	fmt.Printf("trans: get %s, size: %d, time elapsed: %fs\n", msg.Key, h.VSize, time.Since(start).Seconds())
+	if rand.Intn(15) == 3 {
+		fmt.Printf("trans: get %s, size: %d, time elapsed: %fs\n", msg.Key, h.VSize, time.Since(start).Seconds())
+	}
 	return nil
 }
 
@@ -280,7 +277,9 @@ func (s *PServ) put(conn net.Conn, h *Head) error {
 	if _, err := reply.Dump(conn); err != nil {
 		return err
 	}
-	fmt.Printf("trans: put %s, size: %d, time elapsed: %fs\n", msg.Key, h.VSize, time.Since(start).Seconds())
+	if rand.Intn(10) == 3 {
+		fmt.Printf("trans: put %s, size: %d, time elapsed: %fs\n", msg.Key, h.VSize, time.Since(start).Seconds())
+	}
 	return nil
 }
 
