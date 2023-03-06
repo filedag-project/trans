@@ -415,6 +415,7 @@ START_SEND:
 		conn.Close()
 		conn = newConn
 		*connPtr = newConn
+		retried = true
 		goto START_SEND
 	}
 	buf := make([]byte, rephead_size)
@@ -438,6 +439,7 @@ START_SEND:
 		conn.Close()
 		conn = newConn
 		*connPtr = newConn
+		retried = true
 		goto START_SEND
 	}
 	h, err := ReplyHeadFrom(buf)
